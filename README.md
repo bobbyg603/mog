@@ -1,3 +1,6 @@
+<img width="300" alt="claude moggin" src="https://github.com/user-attachments/assets/089db43c-7381-4e62-87bc-af2e7cd0129f" />
+
+
 # mog — Sandboxed Claude Issue Mogging
 
 One command to go from GitHub issue to pull request, powered by Claude Code running in a Docker sandbox.
