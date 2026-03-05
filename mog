@@ -124,11 +124,10 @@ ok "Issue: ${ISSUE_TITLE}"
 # ---------------------------------------------------------------------------
 REPO_DIR="$REPOS_DIR/$OWNER/$REPO_NAME"
 
-if [[ ! -d "$REPO_DIR/.git" ]]; then
+if [[ ! -d "$REPO_DIR" ]]; then
   info "Cloning ${REPO} into ${REPO_DIR}..."
   mkdir -p "$REPOS_DIR/$OWNER"
-  gh repo clone "$REPO" "$REPO_DIR" -- --bare 2>/dev/null \
-    || gh repo clone "$REPO" "$REPO_DIR"
+  gh repo clone "$REPO" "$REPO_DIR"
 fi
 
 DEFAULT_BRANCH=$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')
@@ -168,7 +167,10 @@ fi
 # ---------------------------------------------------------------------------
 # Build the prompt for Claude Code
 # ---------------------------------------------------------------------------
-PROMPT=$(cat <<PROMPT_EOF
+PROMPT_FILE=$(mktemp)
+trap 'rm -f "$PROMPT_FILE"' EXIT
+
+cat > "$PROMPT_FILE" <<PROMPT_EOF
 You are working on GitHub issue #${ISSUE_NUM} for the repository ${REPO}.
 
 ## Issue: ${ISSUE_TITLE}
@@ -190,7 +192,8 @@ ${ISSUE_LABELS}
 When you are done, make a single commit (or a small, logical set of commits) with
 a message like: "fix: <short description> (#${ISSUE_NUM})"
 PROMPT_EOF
-)
+
+PROMPT=$(cat "$PROMPT_FILE")
 
 # ---------------------------------------------------------------------------
 # Run Claude Code in the persistent sandbox
@@ -242,7 +245,8 @@ ok "Branch pushed."
 
 info "Opening pull request..."
 
-PR_BODY=$(cat <<PR_EOF
+PR_BODY_FILE=$(mktemp)
+cat > "$PR_BODY_FILE" <<PR_EOF
 ## Summary
 
 Closes #${ISSUE_NUM}
@@ -256,16 +260,19 @@ ${ISSUE_BODY}
 ---
 *Please review the changes carefully before merging.*
 PR_EOF
-)
+
+PR_TITLE="fix: ${ISSUE_TITLE} [#${ISSUE_NUM}]"
 
 PR_URL=$(gh pr create \
   --repo "$REPO" \
   --base "$DEFAULT_BRANCH" \
   --head "$BRANCH_NAME" \
-  --title "fix: ${ISSUE_TITLE} (#${ISSUE_NUM})" \
-  --body "$PR_BODY" \
+  --title "$PR_TITLE" \
+  --body-file "$PR_BODY_FILE" \
   2>&1) \
   || die "Failed to create PR. You may need to push first or the PR may already exist."
+
+rm -f "$PR_BODY_FILE"
 
 ok "Pull request created!"
 echo -e "${GREEN}${PR_URL}${NC}"
