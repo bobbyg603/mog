@@ -1,12 +1,25 @@
 {
-  "name": "mog",
+  "name": "@bobbyg603/mog",
   "version": "0.1.0",
+  "description": "One command to go from GitHub issue to pull request, powered by Claude Code in a Docker sandbox",
   "module": "src/index.ts",
   "type": "module",
-  "private": true,
   "bin": {
     "mog": "src/index.ts"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workingdevshero/mog.git"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "github",
+    "automation",
+    "docker",
+    "sandbox"
+  ],
+  "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest"
   },

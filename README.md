@@ -24,23 +24,21 @@ That's it. `mog` will:
 - **GitHub CLI** (`gh`) — authenticated via `gh auth login`
 - **Git** with push access to your target repos
 
+## Install
+
+```bash
+bun install -g @bobbyg603/mog
+```
+
 ## Quick start
 
 ```bash
-# 1. Clone and install dependencies
-git clone https://github.com/workingdevshero/mog.git ~/mog
-cd ~/mog && bun install
-
-# 2. Add alias to your shell profile
-echo 'alias mog="bun run $HOME/mog/src/index.ts"' >> ~/.zshrc
-source ~/.zshrc
-
-# 2. One-time setup: create sandbox & authenticate
+# 1. One-time setup: create sandbox & authenticate
 mog init
 # This launches Claude Code — use /login to authenticate with your Max subscription
 # Once logged in, type /exit to return
 
-# 3. Start mogging issues
+# 2. Start mogging issues
 mog workingdevshero/automate-it 123
 ```
 
