@@ -204,11 +204,38 @@ info "Worktree: ${WORKTREE_DIR}"
 echo ""
 
 # The worktree lives under REPOS_DIR which is the sandbox workspace.
-# Use exec to run claude inside the existing sandbox at the worktree path.
-docker sandbox exec -it -w "$WORKTREE_DIR" "$SANDBOX_NAME" \
-  claude --dangerously-skip-permissions --verbose -p "$PROMPT"
+# Use stream-json output so we can display progress in real-time.
+docker sandbox exec -w "$WORKTREE_DIR" "$SANDBOX_NAME" \
+  claude --dangerously-skip-permissions --verbose --output-format stream-json -p "$PROMPT" 2>/dev/null | \
+  jq --unbuffered -r '
+    if .type == "assistant" and .message.content then
+      .message.content[] |
+        if .type == "text" then
+          .text
+        elif .type == "tool_use" then
+          "\u001b[0;36m[" + .name + "]\u001b[0m " + (
+            if .name == "Read" then (.input.file_path // "")
+            elif .name == "Edit" then (.input.file_path // "")
+            elif .name == "Write" then (.input.file_path // "")
+            elif .name == "Bash" then (.input.description // .input.command // "")
+            elif .name == "Glob" then (.input.pattern // "")
+            elif .name == "Grep" then (.input.pattern // "")
+            else (.input | tostring | .[0:120])
+            end
+          )
+        else empty
+        end
+    elif .type == "result" then
+      if .is_error then
+        "\u001b[0;31m[error]\u001b[0m " + (.result // "unknown error")
+      else
+        "\n\u001b[0;32m[done]\u001b[0m " + (.result // "" | .[0:200])
+      end
+    else empty
+    end
+  '
 
-CLAUDE_EXIT=$?
+CLAUDE_EXIT=${PIPESTATUS[0]}
 
 if [[ $CLAUDE_EXIT -ne 0 ]]; then
   warn "Claude Code exited with code ${CLAUDE_EXIT}."
