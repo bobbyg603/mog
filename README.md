@@ -20,15 +20,19 @@ That's it. `mog` will:
 
 - **macOS or Windows** (Docker sandbox microVMs require Docker Desktop)
 - **Docker Desktop** — running and up to date (must support `docker sandbox`)
+- **Bun** — install from [bun.sh](https://bun.sh)
 - **GitHub CLI** (`gh`) — authenticated via `gh auth login`
 - **Git** with push access to your target repos
 
 ## Quick start
 
 ```bash
-# 1. Install mog
-chmod +x ~/mog/mog
-echo 'alias mog="$HOME/mog/mog"' >> ~/.zshrc
+# 1. Clone and install dependencies
+git clone https://github.com/workingdevshero/mog.git ~/mog
+cd ~/mog && bun install
+
+# 2. Add alias to your shell profile
+echo 'alias mog="bun run $HOME/mog/src/index.ts"' >> ~/.zshrc
 source ~/.zshrc
 
 # 2. One-time setup: create sandbox & authenticate
