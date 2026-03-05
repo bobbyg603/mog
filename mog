@@ -206,7 +206,7 @@ echo ""
 # The worktree lives under REPOS_DIR which is the sandbox workspace.
 # Use exec to run claude inside the existing sandbox at the worktree path.
 docker sandbox exec -it -w "$WORKTREE_DIR" "$SANDBOX_NAME" \
-  claude --dangerously-skip-permissions -p "$PROMPT"
+  claude --dangerously-skip-permissions --verbose -p "$PROMPT"
 
 CLAUDE_EXIT=$?
 
@@ -221,14 +221,21 @@ fi
 # ---------------------------------------------------------------------------
 cd "$WORKTREE_DIR"
 
-if git diff --quiet && git diff --cached --quiet; then
+# Check for unpushed commits OR uncommitted changes
+HAS_UNPUSHED=$(git log "origin/${DEFAULT_BRANCH}..HEAD" --oneline 2>/dev/null | head -1)
+HAS_UNCOMMITTED=false
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  HAS_UNCOMMITTED=true
+fi
+
+if [[ -z "$HAS_UNPUSHED" ]] && [[ "$HAS_UNCOMMITTED" == "false" ]]; then
   warn "No changes detected. Claude may not have made any modifications."
   warn "Worktree: ${WORKTREE_DIR}"
   exit 0
 fi
 
 # Stage any unstaged changes Claude might have left
-if ! git diff --quiet; then
+if [[ "$HAS_UNCOMMITTED" == "true" ]]; then
   info "Staging uncommitted changes..."
   git add -A
   git commit -m "fix: address issue #${ISSUE_NUM} - ${ISSUE_TITLE}" || true
