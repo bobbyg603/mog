@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { spawnSync } from "child_process";
 import { fetchIssue } from "./github";
 import { ensureRepo, createWorktree } from "./worktree";
 import { ensureSandbox, runClaude } from "./sandbox";
@@ -20,12 +21,10 @@ async function init() {
   } else {
     log.info(`Creating persistent sandbox '${SANDBOX_NAME}'...`);
     log.info(`Workspace: ${reposDir}`);
-    const createProc = Bun.spawn(["docker", "sandbox", "create", "--name", SANDBOX_NAME, "claude", reposDir], {
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+    const createResult = spawnSync("docker", ["sandbox", "create", "--name", SANDBOX_NAME, "claude", reposDir], {
+      stdio: "inherit",
     });
-    const createExit = await createProc.exited;
+    const createExit = createResult.status;
     if (createExit !== 0) {
       log.die("Failed to create sandbox.");
     }
@@ -36,12 +35,10 @@ async function init() {
     console.log();
   }
 
-  const proc = Bun.spawn(["docker", "sandbox", "run", SANDBOX_NAME], {
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+  const runResult = spawnSync("docker", ["sandbox", "run", SANDBOX_NAME], {
+    stdio: "inherit",
   });
-  const exitCode = await proc.exited;
+  const exitCode = runResult.status;
   if (exitCode !== 0) {
     log.die("Sandbox failed to run. Try 'docker sandbox ls' to check its status.");
   }
