@@ -6,7 +6,7 @@ export interface Issue {
   labels: string;
 }
 
-export async function fetchIssue(repo: string, issueNum: string): Promise<Issue> {
+export function fetchIssue(repo: string, issueNum: string): Issue {
   log.info(`Fetching issue #${issueNum} from ${repo}...`);
 
   const proc = Bun.spawnSync([
@@ -28,14 +28,14 @@ export async function fetchIssue(repo: string, issueNum: string): Promise<Issue>
   };
 }
 
-export async function pushAndCreatePR(
+export function pushAndCreatePR(
   repo: string,
   worktreeDir: string,
   branchName: string,
   defaultBranch: string,
   issueNum: string,
   issue: Issue
-) {
+): void {
   // Check for unpushed commits or uncommitted changes
   const unpushed = Bun.spawnSync(["git", "log", `origin/${defaultBranch}..HEAD`, "--oneline"], { cwd: worktreeDir });
   const diffCheck = Bun.spawnSync(["git", "diff", "--quiet"], { cwd: worktreeDir });

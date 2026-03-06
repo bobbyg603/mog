@@ -1,13 +1,13 @@
+import fs from "fs";
 import { log } from "./log";
 
-export async function ensureRepo(
+export function ensureRepo(
   repo: string,
   owner: string,
   repoName: string,
   reposDir: string
-): Promise<{ defaultBranch: string }> {
+): { defaultBranch: string } {
   const repoDir = `${reposDir}/${owner}/${repoName}`;
-  const fs = await import("fs");
 
   if (!fs.existsSync(repoDir)) {
     log.info(`Cloning ${repo} into ${repoDir}...`);
@@ -37,14 +37,14 @@ export async function ensureRepo(
   return { defaultBranch: branchProc.stdout.toString().trim() };
 }
 
-export async function createWorktree(
+export function createWorktree(
   reposDir: string,
   owner: string,
   repoName: string,
   defaultBranch: string,
   issueNum: string,
   issueTitle: string
-): Promise<{ worktreeDir: string; branchName: string }> {
+): { worktreeDir: string; branchName: string } {
   const safeTitle = issueTitle
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "-")
@@ -55,8 +55,6 @@ export async function createWorktree(
   const branchName = `${issueNum}-${safeTitle}`;
   const repoDir = `${reposDir}/${owner}/${repoName}`;
   const worktreeDir = `${reposDir}/${owner}/${repoName}-worktrees/${branchName}`;
-
-  const fs = await import("fs");
 
   if (fs.existsSync(worktreeDir)) {
     log.warn(`Worktree already exists at ${worktreeDir}, reusing.`);

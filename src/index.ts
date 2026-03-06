@@ -13,7 +13,7 @@ async function init() {
   log.info("Initializing mog sandbox...");
 
   const reposDir = getReposDir();
-  const exists = await sandboxExists(SANDBOX_NAME);
+  const exists = sandboxExists(SANDBOX_NAME);
 
   if (exists) {
     log.warn(`Sandbox '${SANDBOX_NAME}' already exists.`);
@@ -102,7 +102,7 @@ async function main() {
   }
 
   // Verify sandbox exists, try to restore from template if missing
-  if (!(await sandboxExists(SANDBOX_NAME))) {
+  if (!sandboxExists(SANDBOX_NAME)) {
     if (!templateExists()) {
       log.die(`Sandbox '${SANDBOX_NAME}' not found. Run 'mog init' first.`);
     }
@@ -116,15 +116,15 @@ async function main() {
   }
 
   // Fetch issue
-  const issue = await fetchIssue(repo, issueNum);
+  const issue = fetchIssue(repo, issueNum);
   log.ok(`Issue: ${issue.title}`);
 
   // Ensure repo & worktree
   const reposDir = getReposDir();
-  const { defaultBranch } = await ensureRepo(repo, owner, repoName, reposDir);
+  const { defaultBranch } = ensureRepo(repo, owner, repoName, reposDir);
   log.info(`Default branch: ${defaultBranch}`);
 
-  const { worktreeDir, branchName } = await createWorktree(
+  const { worktreeDir, branchName } = createWorktree(
     reposDir, owner, repoName, defaultBranch, issueNum, issue.title
   );
 
@@ -140,14 +140,14 @@ async function main() {
   await runClaude(SANDBOX_NAME, worktreeDir, prompt);
 
   // Push and create PR
-  await pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue);
+  pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue);
 }
 
 function getReposDir(): string {
   return process.env.MOG_REPOS_DIR || `${process.env.HOME}/mog-repos`;
 }
 
-async function sandboxExists(name: string): Promise<boolean> {
+function sandboxExists(name: string): boolean {
   const result = Bun.spawnSync(["docker", "sandbox", "ls"]);
   const output = result.stdout.toString();
   return output.includes(name);
