@@ -1,6 +1,6 @@
 {
   "name": "@bobbyg603/mog",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One command to go from GitHub issue to pull request, powered by Claude Code in a Docker sandbox",
   "module": "src/index.ts",
   "type": "module",
