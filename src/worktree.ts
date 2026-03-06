@@ -34,7 +34,15 @@ export function ensureRepo(
     log.die("Failed to determine default branch.");
   }
 
-  return { defaultBranch: branchProc.stdout.toString().trim() };
+  const defaultBranch = branchProc.stdout.toString().trim();
+
+  // Update the main repo to latest before creating worktrees
+  log.info(`Updating ${repoDir} (${defaultBranch})...`);
+  Bun.spawnSync(["git", "fetch", "origin", defaultBranch], { cwd: repoDir });
+  Bun.spawnSync(["git", "checkout", defaultBranch], { cwd: repoDir, stdout: "ignore", stderr: "ignore" });
+  Bun.spawnSync(["git", "pull", "origin", defaultBranch], { cwd: repoDir });
+
+  return { defaultBranch };
 }
 
 export function createWorktree(
