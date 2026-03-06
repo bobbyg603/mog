@@ -15,7 +15,7 @@ interface StreamEvent {
   is_error?: boolean;
 }
 
-const MAX_CONTINUATIONS = 5;
+const MAX_CONTINUATIONS = parseInt(process.env.MOG_MAX_CONTINUATIONS || "5", 10);
 const CONTINUE_PROMPT = `You stopped before finishing. The task is not done yet — there are no commits.
 Continue where you left off. Do NOT re-plan. Execute the implementation now and commit when done.`;
 
