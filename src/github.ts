@@ -53,8 +53,15 @@ export function pushAndCreatePR(
   // Stage any unstaged changes Claude might have left
   if (hasUncommitted) {
     log.info("Staging uncommitted changes...");
-    Bun.spawnSync(["git", "add", "-A"], { cwd: worktreeDir });
-    Bun.spawnSync(["git", "commit", "-m", `fix: address issue #${issueNum} - ${issue.title}`], { cwd: worktreeDir });
+    const addResult = Bun.spawnSync(["git", "add", "-A"], { cwd: worktreeDir });
+    if (addResult.exitCode !== 0) {
+      log.die("Failed to stage changes.");
+    }
+    const prefix = issue.labels.includes("enhancement") || issue.labels.includes("feature") ? "feat" : "fix";
+    const commitResult = Bun.spawnSync(["git", "commit", "-m", `${prefix}: address issue #${issueNum} - ${issue.title}`], { cwd: worktreeDir });
+    if (commitResult.exitCode !== 0) {
+      log.warn("Commit failed — changes may already be committed.");
+    }
   }
 
   // Push
@@ -81,7 +88,8 @@ ${issue.body}
 ---
 *Please review the changes carefully before merging.*`;
 
-  const prTitle = `fix: ${issue.title} [#${issueNum}]`;
+  const prefix = issue.labels.includes("enhancement") || issue.labels.includes("feature") ? "feat" : "fix";
+  const prTitle = `${prefix}: ${issue.title} [#${issueNum}]`;
 
   const pr = Bun.spawnSync([
     "gh", "pr", "create",

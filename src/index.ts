@@ -68,10 +68,12 @@ async function main() {
     }
   }
 
+  const reposDir = getReposDir();
+
   // Check docker sandbox is available (may fail if sandbox state is stale after Docker restart)
   const sandboxCheck = Bun.spawnSync(["docker", "sandbox", "ls"]);
   if (sandboxCheck.exitCode !== 0) {
-    const recovered = tryRecoverSandbox(getReposDir());
+    const recovered = tryRecoverSandbox(reposDir);
     if (!recovered) {
       log.die("Docker sandbox not available. Make sure Docker Desktop is running and up to date.");
     }
@@ -95,6 +97,11 @@ async function main() {
 
   const repo = args[0];
   const issueNum = args[1];
+
+  if (!/^\d+$/.test(issueNum)) {
+    log.die(`Invalid issue number: '${issueNum}'. Must be a positive integer.`);
+  }
+
   const [owner, repoName] = repo.split("/");
 
   if (!owner || !repoName) {
@@ -107,7 +114,6 @@ async function main() {
       log.die(`Sandbox '${SANDBOX_NAME}' not found. Run 'mog init' first.`);
     }
     log.info("Sandbox missing — restoring from saved snapshot...");
-    const reposDir = getReposDir();
     const restored = restoreSandboxFromTemplate(SANDBOX_NAME, reposDir);
     if (!restored) {
       log.die("Failed to restore sandbox from snapshot. Run 'mog init' to recreate.");
@@ -120,7 +126,6 @@ async function main() {
   log.ok(`Issue: ${issue.title}`);
 
   // Ensure repo & worktree
-  const reposDir = getReposDir();
   const { defaultBranch } = ensureRepo(repo, owner, repoName, reposDir);
   log.info(`Default branch: ${defaultBranch}`);
 
@@ -149,8 +154,7 @@ function getReposDir(): string {
 
 function sandboxExists(name: string): boolean {
   const result = Bun.spawnSync(["docker", "sandbox", "ls"]);
-  const output = result.stdout.toString();
-  return output.includes(name);
+  return result.stdout.toString().split("\n").some(line => line.split(/\s+/)[0] === name);
 }
 
 function templateExists(): boolean {
