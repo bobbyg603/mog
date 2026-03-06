@@ -8,6 +8,7 @@ import { pushAndCreatePR } from "./github";
 import { log } from "./log";
 
 const SANDBOX_NAME = "mog";
+const TEMPLATE_TAG = "mog-template:latest";
 
 async function init() {
   log.info("Initializing mog sandbox...");
@@ -43,6 +44,17 @@ async function init() {
     log.die("Sandbox failed to run. Try 'docker sandbox ls' to check its status.");
   }
 
+  // Save sandbox as template so it can be restored after Docker restarts
+  log.info("Saving sandbox snapshot (preserves auth across Docker restarts)...");
+  const saveResult = spawnSync("docker", ["sandbox", "save", SANDBOX_NAME, TEMPLATE_TAG], {
+    stdio: "inherit",
+  });
+  if (saveResult.status !== 0) {
+    log.warn("Failed to save sandbox snapshot. Auth may not persist across Docker restarts.");
+  } else {
+    log.ok("Snapshot saved.");
+  }
+
   log.ok("mog is ready. Run: mog <owner/repo> <issue_number>");
 }
 
@@ -57,10 +69,13 @@ async function main() {
     }
   }
 
-  // Check docker sandbox is available
+  // Check docker sandbox is available (may fail if sandbox state is stale after Docker restart)
   const sandboxCheck = Bun.spawnSync(["docker", "sandbox", "ls"]);
   if (sandboxCheck.exitCode !== 0) {
-    log.die("Docker sandbox not available. Make sure Docker Desktop is running and up to date.");
+    const recovered = tryRecoverSandbox(getReposDir());
+    if (!recovered) {
+      log.die("Docker sandbox not available. Make sure Docker Desktop is running and up to date.");
+    }
   }
 
   if (args[0] === "init") {
@@ -87,9 +102,18 @@ async function main() {
     log.die("Invalid repo format. Use: owner/repo");
   }
 
-  // Verify sandbox exists
+  // Verify sandbox exists, try to restore from template if missing
   if (!(await sandboxExists(SANDBOX_NAME))) {
-    log.die(`Sandbox '${SANDBOX_NAME}' not found. Run 'mog init' first.`);
+    if (!templateExists()) {
+      log.die(`Sandbox '${SANDBOX_NAME}' not found. Run 'mog init' first.`);
+    }
+    log.info("Sandbox missing — restoring from saved snapshot...");
+    const reposDir = getReposDir();
+    const restored = restoreSandboxFromTemplate(SANDBOX_NAME, reposDir);
+    if (!restored) {
+      log.die("Failed to restore sandbox from snapshot. Run 'mog init' to recreate.");
+    }
+    log.ok("Sandbox restored from snapshot (auth preserved).");
   }
 
   // Fetch issue
@@ -128,6 +152,46 @@ async function sandboxExists(name: string): Promise<boolean> {
   const result = Bun.spawnSync(["docker", "sandbox", "ls"]);
   const output = result.stdout.toString();
   return output.includes(name);
+}
+
+function templateExists(): boolean {
+  const result = Bun.spawnSync(["docker", "image", "inspect", TEMPLATE_TAG]);
+  return result.exitCode === 0;
+}
+
+function restoreSandboxFromTemplate(name: string, reposDir: string): boolean {
+  const create = spawnSync("docker", ["sandbox", "create", "--template", TEMPLATE_TAG, "--name", name, "claude", reposDir], {
+    stdio: "inherit",
+  });
+  return create.status === 0;
+}
+
+function tryRecoverSandbox(reposDir: string): boolean {
+  log.warn("Docker sandbox state is stale — attempting recovery...");
+
+  // Clean up stale sandbox
+  spawnSync("docker", ["sandbox", "rm", SANDBOX_NAME], { stdio: "ignore" });
+
+  // Check if docker sandbox ls works now
+  const check = Bun.spawnSync(["docker", "sandbox", "ls"]);
+  if (check.exitCode !== 0) {
+    // docker sandbox itself is broken, not just stale state
+    return false;
+  }
+
+  // If we have a saved template, restore from it
+  if (templateExists()) {
+    log.info("Restoring sandbox from saved snapshot...");
+    const restored = restoreSandboxFromTemplate(SANDBOX_NAME, reposDir);
+    if (restored) {
+      log.ok("Sandbox restored from snapshot (auth preserved).");
+      return true;
+    }
+  }
+
+  // Recovered docker sandbox command but no template — user needs to mog init
+  log.warn("No saved snapshot found. Run 'mog init' to set up the sandbox.");
+  return true;
 }
 
 async function run(cmd: string[]): Promise<string> {

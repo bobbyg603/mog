@@ -15,14 +15,25 @@ interface StreamEvent {
   is_error?: boolean;
 }
 
-export async function ensureSandbox(name: string, reposDir: string): Promise<void> {
+export async function ensureSandbox(name: string, reposDir: string, templateTag?: string): Promise<void> {
   const ls = Bun.spawnSync(["docker", "sandbox", "ls"]);
   if (ls.stdout.toString().includes(name)) {
     return;
   }
 
+  // Try to restore from template if available
+  const createArgs = ["sandbox", "create"];
+  if (templateTag) {
+    const inspect = Bun.spawnSync(["docker", "image", "inspect", templateTag]);
+    if (inspect.exitCode === 0) {
+      log.info(`Restoring sandbox '${name}' from saved snapshot...`);
+      createArgs.push("--template", templateTag);
+    }
+  }
+  createArgs.push("--name", name, "claude", reposDir);
+
   log.info(`Creating persistent sandbox '${name}'...`);
-  const create = Bun.spawnSync(["docker", "sandbox", "create", "--name", name, "claude", reposDir]);
+  const create = Bun.spawnSync(["docker", ...createArgs]);
   if (create.exitCode !== 0) {
     log.die(`Failed to create sandbox: ${create.stderr.toString()}`);
   }
