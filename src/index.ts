@@ -20,7 +20,15 @@ async function init() {
   } else {
     log.info(`Creating persistent sandbox '${SANDBOX_NAME}'...`);
     log.info(`Workspace: ${reposDir}`);
-    await run(["docker", "sandbox", "create", "--name", SANDBOX_NAME, "claude", reposDir]);
+    const createProc = Bun.spawn(["docker", "sandbox", "create", "--name", SANDBOX_NAME, "claude", reposDir], {
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const createExit = await createProc.exited;
+    if (createExit !== 0) {
+      log.die("Failed to create sandbox.");
+    }
     log.ok("Sandbox created.");
     console.log();
     log.info("Launching sandbox — authenticate with /login to use your Max subscription.");
@@ -33,7 +41,10 @@ async function init() {
     stdout: "inherit",
     stderr: "inherit",
   });
-  await proc.exited;
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    log.die("Sandbox failed to run. Try 'docker sandbox ls' to check its status.");
+  }
 
   log.ok("mog is ready. Run: mog <owner/repo> <issue_number>");
 }
