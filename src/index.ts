@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 
-import { spawnSync } from "child_process";
 import { fetchIssue } from "./github";
 import { ensureRepo, createWorktree } from "./worktree";
 import { runClaude } from "./sandbox";
@@ -22,10 +21,10 @@ async function init() {
   } else {
     log.info(`Creating persistent sandbox '${SANDBOX_NAME}'...`);
     log.info(`Workspace: ${reposDir}`);
-    const createResult = spawnSync("docker", ["sandbox", "create", "--name", SANDBOX_NAME, "claude", reposDir], {
-      stdio: "inherit",
+    const createResult = Bun.spawnSync(["docker", "sandbox", "create", "--name", SANDBOX_NAME, "claude", reposDir], {
+      stdio: ["inherit", "inherit", "inherit"],
     });
-    const createExit = createResult.status;
+    const createExit = createResult.exitCode;
     if (createExit !== 0) {
       log.die("Failed to create sandbox.");
     }
@@ -36,20 +35,20 @@ async function init() {
     console.log();
   }
 
-  const runResult = spawnSync("docker", ["sandbox", "run", SANDBOX_NAME], {
-    stdio: "inherit",
+  const runResult = Bun.spawnSync(["docker", "sandbox", "run", SANDBOX_NAME], {
+    stdio: ["inherit", "inherit", "inherit"],
   });
-  const exitCode = runResult.status;
+  const exitCode = runResult.exitCode;
   if (exitCode !== 0) {
     log.die("Sandbox failed to run. Try 'docker sandbox ls' to check its status.");
   }
 
   // Save sandbox as template so it can be restored after Docker restarts
   log.info("Saving sandbox snapshot (preserves auth across Docker restarts)...");
-  const saveResult = spawnSync("docker", ["sandbox", "save", SANDBOX_NAME, TEMPLATE_TAG], {
-    stdio: "inherit",
+  const saveResult = Bun.spawnSync(["docker", "sandbox", "save", SANDBOX_NAME, TEMPLATE_TAG], {
+    stdio: ["inherit", "inherit", "inherit"],
   });
-  if (saveResult.status !== 0) {
+  if (saveResult.exitCode !== 0) {
     log.warn("Failed to save sandbox snapshot. Auth may not persist across Docker restarts.");
   } else {
     log.ok("Snapshot saved.");
@@ -160,17 +159,17 @@ function templateExists(): boolean {
 }
 
 function restoreSandboxFromTemplate(name: string, reposDir: string): boolean {
-  const create = spawnSync("docker", ["sandbox", "create", "--template", TEMPLATE_TAG, "--name", name, "claude", reposDir], {
-    stdio: "inherit",
+  const create = Bun.spawnSync(["docker", "sandbox", "create", "--template", TEMPLATE_TAG, "--name", name, "claude", reposDir], {
+    stdio: ["inherit", "inherit", "inherit"],
   });
-  return create.status === 0;
+  return create.exitCode === 0;
 }
 
 function tryRecoverSandbox(reposDir: string): boolean {
   log.warn("Docker sandbox state is stale — attempting recovery...");
 
   // Clean up stale sandbox
-  spawnSync("docker", ["sandbox", "rm", SANDBOX_NAME], { stdio: "ignore" });
+  Bun.spawnSync(["docker", "sandbox", "rm", SANDBOX_NAME], { stdio: ["ignore", "ignore", "ignore"] });
 
   // Check if docker sandbox ls works now
   const check = Bun.spawnSync(["docker", "sandbox", "ls"]);
