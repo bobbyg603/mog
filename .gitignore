@@ -2,3 +2,4 @@ node_modules/
 bun.lock
 .DS_Store
 .claude
+dist

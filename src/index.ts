@@ -3,7 +3,7 @@
 import { spawnSync } from "child_process";
 import { fetchIssue } from "./github";
 import { ensureRepo, createWorktree } from "./worktree";
-import { ensureSandbox, runClaude } from "./sandbox";
+import { runClaude } from "./sandbox";
 import { pushAndCreatePR } from "./github";
 import { log } from "./log";
 
@@ -192,14 +192,6 @@ function tryRecoverSandbox(reposDir: string): boolean {
   // Recovered docker sandbox command but no template — user needs to mog init
   log.warn("No saved snapshot found. Run 'mog init' to set up the sandbox.");
   return true;
-}
-
-async function run(cmd: string[]): Promise<string> {
-  const proc = Bun.spawnSync(cmd);
-  if (proc.exitCode !== 0) {
-    throw new Error(`Command failed: ${cmd.join(" ")}\n${proc.stderr.toString()}`);
-  }
-  return proc.stdout.toString().trim();
 }
 
 function buildPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string }): string {

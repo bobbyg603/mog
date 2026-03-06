@@ -15,39 +15,46 @@ interface StreamEvent {
   is_error?: boolean;
 }
 
-export async function ensureSandbox(name: string, reposDir: string, templateTag?: string): Promise<void> {
-  const ls = Bun.spawnSync(["docker", "sandbox", "ls"]);
-  if (ls.stdout.toString().includes(name)) {
-    return;
-  }
-
-  // Try to restore from template if available
-  const createArgs = ["sandbox", "create"];
-  if (templateTag) {
-    const inspect = Bun.spawnSync(["docker", "image", "inspect", templateTag]);
-    if (inspect.exitCode === 0) {
-      log.info(`Restoring sandbox '${name}' from saved snapshot...`);
-      createArgs.push("--template", templateTag);
-    }
-  }
-  createArgs.push("--name", name, "claude", reposDir);
-
-  log.info(`Creating persistent sandbox '${name}'...`);
-  const create = Bun.spawnSync(["docker", ...createArgs]);
-  if (create.exitCode !== 0) {
-    log.die(`Failed to create sandbox: ${create.stderr.toString()}`);
-  }
-  log.ok("Sandbox created.");
-}
+const MAX_CONTINUATIONS = 5;
+const CONTINUE_PROMPT = `You stopped before finishing. The task is not done yet — there are no commits.
+Continue where you left off. Do NOT re-plan. Execute the implementation now and commit when done.`;
 
 export async function runClaude(sandboxName: string, worktreeDir: string, prompt: string): Promise<void> {
+  // Initial run
+  await execClaude(sandboxName, worktreeDir, ["-p", prompt]);
+
+  // Continue loop: if no commits were made, nudge Claude to keep going
+  for (let i = 0; i < MAX_CONTINUATIONS; i++) {
+    if (hasNewCommits(sandboxName, worktreeDir)) {
+      return;
+    }
+    log.warn(`No commits yet — continuing Claude (attempt ${i + 2}/${MAX_CONTINUATIONS + 1})...`);
+    await execClaude(sandboxName, worktreeDir, ["--continue", "-p", CONTINUE_PROMPT]);
+  }
+
+  if (!hasNewCommits(sandboxName, worktreeDir)) {
+    log.warn("Claude did not produce any commits after all attempts.");
+  }
+}
+
+function hasNewCommits(sandboxName: string, worktreeDir: string): boolean {
+  const result = Bun.spawnSync([
+    "docker", "sandbox", "exec",
+    "-w", worktreeDir,
+    sandboxName,
+    "git", "log", "--oneline", "HEAD", "--not", "--remotes", "-1",
+  ]);
+  return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
+}
+
+async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: string[]): Promise<void> {
   const proc = Bun.spawn([
     "docker", "sandbox", "exec",
     "-w", worktreeDir,
     sandboxName,
     "claude", "--dangerously-skip-permissions",
     "--verbose", "--output-format", "stream-json",
-    "-p", prompt,
+    ...claudeArgs,
   ], {
     stdout: "pipe",
     stderr: "pipe",
