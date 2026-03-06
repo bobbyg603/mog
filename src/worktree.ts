@@ -13,7 +13,7 @@ export async function ensureRepo(
     log.info(`Cloning ${repo} into ${repoDir}...`);
     fs.mkdirSync(`${reposDir}/${owner}`, { recursive: true });
 
-    const clone = Bun.spawnSync(["gh", "repo", "clone", repo, repoDir], {
+    const clone = Bun.spawnSync(["gh", "repo", "clone", repo, repoDir, "--", "--recurse-submodules"], {
       stdout: "inherit",
       stderr: "inherit",
     });
@@ -85,6 +85,9 @@ export async function createWorktree(
       log.die(`Failed to create worktree. Branch '${branchName}' may already exist.`);
     }
   }
+
+  // Init submodules in the worktree if present
+  Bun.spawnSync(["git", "submodule", "update", "--init", "--recursive"], { cwd: worktreeDir });
 
   log.ok(`Worktree created at ${worktreeDir}`);
   return { worktreeDir, branchName };
