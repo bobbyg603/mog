@@ -1,4 +1,4 @@
-<img width="300" alt="claude moggin" src="https://github.com/user-attachments/assets/089db43c-7381-4e62-87bc-af2e7cd0129f" />
+<img width="300" alt="claude moggin" src="https://github.com/user-attachments/assets/bed005f3-12c3-47ee-8b6e-6974ed4e0a79" />
 
 
 # mog — Sandboxed Claude Issue Mogging
@@ -91,7 +91,8 @@ mog sparx-tech/hub-firmware 45
 | Environment Variable | Default | Description |
 |---|---|---|
 | `MOG_REPOS_DIR` | `~/mog-repos` | Where repos are cloned and worktrees created (also the sandbox workspace) |
-| `MOG_MAX_CONTINUATIONS` | `5` | Max times Claude is re-prompted if it stops without committing |
+| `MOG_MAX_ITERATIONS` | `10` | Max build loop iterations per issue |
+| `MOG_MAX_CONTINUATIONS` | — | Legacy alias for `MOG_MAX_ITERATIONS` |
 
 ## Worktree management
 

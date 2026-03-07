@@ -133,8 +133,10 @@ async function main() {
     reposDir, owner, repoName, defaultBranch, issueNum, issue.title
   );
 
-  // Build prompt
-  const prompt = buildPrompt(repo, issueNum, issue);
+  // Build prompts
+  const planningPrompt = buildPlanningPrompt(repo, issueNum, issue);
+  const buildingPromptFn = (remaining: string[], plan: string) =>
+    buildBuildingPrompt(repo, issueNum, issue, remaining, plan);
 
   // Run Claude in sandbox
   log.info("Launching Claude Code in sandbox...");
@@ -142,7 +144,7 @@ async function main() {
   log.info(`Worktree: ${worktreeDir}`);
   console.log();
 
-  await runClaude(SANDBOX_NAME, worktreeDir, prompt);
+  await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn);
 
   // Push and create PR
   pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue);
@@ -197,8 +199,54 @@ function tryRecoverSandbox(reposDir: string): boolean {
   return true;
 }
 
-function buildPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string }): string {
+function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string }): string {
   return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
+
+## Issue: ${issue.title}
+
+### Description
+${issue.body}
+
+### Labels
+${issue.labels}
+
+## Instructions
+
+Your job in this step is to **plan only** — do NOT implement anything and do NOT commit.
+
+1. Read and understand the codebase structure thoroughly.
+2. Analyze the issue and break it down into small, atomic implementation tasks.
+3. Create a file called \`IMPLEMENTATION_PLAN.md\` in the root of the repository with a checklist of tasks.
+
+The plan should:
+- Have 3-8 tasks (fewer for simple issues, more for complex ones)
+- Order tasks by dependency (implement foundations first)
+- Each task should be a single, atomic unit of work that results in one commit
+- Use markdown checklist format: \`- [ ] Task description\`
+
+Example format:
+\`\`\`markdown
+# Implementation Plan for #${issueNum}
+
+- [ ] Add the FooBar interface to src/types.ts
+- [ ] Implement the FooBar service in src/services/foobar.ts
+- [ ] Update the main handler to use FooBar service
+- [ ] Add unit tests for FooBar service
+\`\`\`
+
+Do NOT implement any code changes. Do NOT make any commits. Only create the plan file.`;
+}
+
+function buildBuildingPrompt(
+  repo: string,
+  issueNum: string,
+  issue: { title: string; body: string; labels: string },
+  remainingItems: string[],
+  planContent: string,
+): string {
+  // Fallback: no plan — use original single-shot prompt
+  if (remainingItems.length === 0 && !planContent) {
+    return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
 
 ## Issue: ${issue.title}
 
@@ -218,6 +266,35 @@ ${issue.labels}
 
 When you are done, make a single commit (or a small, logical set of commits) with
 a message like: "fix: <short description> (#${issueNum})"`;
+  }
+
+  const currentTask = remainingItems[0]?.replace("- [ ] ", "") || "Complete remaining work";
+
+  return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
+
+## Issue: ${issue.title}
+
+### Description
+${issue.body}
+
+### Labels
+${issue.labels}
+
+## Current Implementation Plan
+
+${planContent}
+
+## Instructions
+
+Implement ONLY the following task:
+**${currentTask}**
+
+Rules:
+1. Implement ONLY this one task — do not work on other unchecked items.
+2. Write clean code that follows the existing project conventions.
+3. Update \`IMPLEMENTATION_PLAN.md\` to check off the completed item (change \`- [ ]\` to \`- [x]\`).
+4. Commit ALL changes (including the updated plan file) with a message like: "feat: ${currentTask.toLowerCase()} (#${issueNum})"
+5. Do NOT work on any other tasks after committing.`;
 }
 
 main().catch((err) => {
