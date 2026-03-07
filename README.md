@@ -1,4 +1,4 @@
-<img width="300" alt="claude moggin" src="https://github.com/user-attachments/assets/bed005f3-12c3-47ee-8b6e-6974ed4e0a79" />
+<img height="320" alt="claude moggin issues" src="https://github.com/user-attachments/assets/72b347d2-b128-47b5-8dcd-e15248350fe0" />
 
 
 # mog — Sandboxed Claude Issue Mogging
