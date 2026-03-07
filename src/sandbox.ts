@@ -17,7 +17,7 @@ interface StreamEvent {
 }
 
 const MAX_ITERATIONS = parseInt(
-  process.env.MOG_MAX_ITERATIONS || process.env.MOG_MAX_CONTINUATIONS || "10",
+  process.env.MOG_MAX_ITERATIONS || process.env.MOG_MAX_CONTINUATIONS || "30",
   10,
 );
 const MAX_STALLS = 2;
