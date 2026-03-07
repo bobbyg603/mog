@@ -77,7 +77,7 @@ export async function runClaude(
   planningPrompt: string,
   buildingPromptFn: (remainingItems: string[], planContent: string) => string,
 ): Promise<string> {
-  const results: string[] = [];
+  let lastResult = "";
 
   // Phase 1 — Planning
   log.info("Phase 1: Creating implementation plan...");
@@ -91,22 +91,22 @@ export async function runClaude(
     log.warn("No implementation plan created — falling back to single-shot mode.");
     const fallbackPrompt = buildingPromptFn([], "");
     const fallbackResult = await execClaude(sandboxName, worktreeDir, ["-p", fallbackPrompt]);
-    if (fallbackResult) results.push(fallbackResult);
+    if (fallbackResult) lastResult = fallbackResult;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      if (getCommitCount(sandboxName, worktreeDir) > 0) return results.join("\n\n");
+      if (getCommitCount(sandboxName, worktreeDir) > 0) return lastResult;
       log.warn(`No commits yet — continuing Claude (attempt ${i + 2}/${MAX_ITERATIONS + 1})...`);
       const contResult = await execClaude(sandboxName, worktreeDir, [
         "--continue", "-p",
         "You stopped before finishing. The task is not done yet — there are no commits. Continue where you left off. Do NOT re-plan. Execute the implementation now and commit when done.",
       ]);
-      if (contResult) results.push(contResult);
+      if (contResult) lastResult = contResult;
     }
 
     if (getCommitCount(sandboxName, worktreeDir) === 0) {
       log.warn("Claude did not produce any commits after all attempts.");
     }
-    return results.join("\n\n");
+    return lastResult;
   }
 
   log.ok(`Implementation plan created with ${unchecked.length} task(s).`);
@@ -134,7 +134,7 @@ export async function runClaude(
     log.info(`${remaining.length} task(s) remaining.`);
 
     const buildResult = await execClaude(sandboxName, worktreeDir, ["-p", buildingPromptFn(remaining, currentPlan)]);
-    if (buildResult) results.push(buildResult);
+    if (buildResult) lastResult = buildResult;
 
     const planAfter = readPlanFile(worktreeDir);
     const uncheckedAfter = planAfter ? getUncheckedItems(planAfter).length : 0;
@@ -165,7 +165,7 @@ export async function runClaude(
     log.ok("Plan file cleaned up.");
   }
 
-  return results.join("\n\n");
+  return lastResult;
 }
 
 async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: string[]): Promise<string> {
