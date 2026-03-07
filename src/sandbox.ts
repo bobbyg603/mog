@@ -76,7 +76,9 @@ export async function runClaude(
   worktreeDir: string,
   planningPrompt: string,
   buildingPromptFn: (remainingItems: string[], planContent: string) => string,
-): Promise<void> {
+): Promise<string> {
+  const results: string[] = [];
+
   // Phase 1 — Planning
   log.info("Phase 1: Creating implementation plan...");
   await execClaude(sandboxName, worktreeDir, ["-p", planningPrompt]);
@@ -88,21 +90,23 @@ export async function runClaude(
   if (!planContent || unchecked.length === 0) {
     log.warn("No implementation plan created — falling back to single-shot mode.");
     const fallbackPrompt = buildingPromptFn([], "");
-    await execClaude(sandboxName, worktreeDir, ["-p", fallbackPrompt]);
+    const fallbackResult = await execClaude(sandboxName, worktreeDir, ["-p", fallbackPrompt]);
+    if (fallbackResult) results.push(fallbackResult);
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      if (getCommitCount(sandboxName, worktreeDir) > 0) return;
+      if (getCommitCount(sandboxName, worktreeDir) > 0) return results.join("\n\n");
       log.warn(`No commits yet — continuing Claude (attempt ${i + 2}/${MAX_ITERATIONS + 1})...`);
-      await execClaude(sandboxName, worktreeDir, [
+      const contResult = await execClaude(sandboxName, worktreeDir, [
         "--continue", "-p",
         "You stopped before finishing. The task is not done yet — there are no commits. Continue where you left off. Do NOT re-plan. Execute the implementation now and commit when done.",
       ]);
+      if (contResult) results.push(contResult);
     }
 
     if (getCommitCount(sandboxName, worktreeDir) === 0) {
       log.warn("Claude did not produce any commits after all attempts.");
     }
-    return;
+    return results.join("\n\n");
   }
 
   log.ok(`Implementation plan created with ${unchecked.length} task(s).`);
@@ -126,10 +130,11 @@ export async function runClaude(
     const commitsBefore = getCommitCount(sandboxName, worktreeDir);
     const uncheckedBefore = remaining.length;
 
-    log.info(`Iteration ${i + 1}/${MAX_ITERATIONS}: ${remaining[0].replace("- [ ] ", "")}`);
+    log.info(`Iteration ${i + 1}/${MAX_ITERATIONS}: ${remaining[0]!.replace("- [ ] ", "")}`);
     log.info(`${remaining.length} task(s) remaining.`);
 
-    await execClaude(sandboxName, worktreeDir, ["-p", buildingPromptFn(remaining, currentPlan)]);
+    const buildResult = await execClaude(sandboxName, worktreeDir, ["-p", buildingPromptFn(remaining, currentPlan)]);
+    if (buildResult) results.push(buildResult);
 
     const planAfter = readPlanFile(worktreeDir);
     const uncheckedAfter = planAfter ? getUncheckedItems(planAfter).length : 0;
@@ -159,9 +164,11 @@ export async function runClaude(
   } else {
     log.ok("Plan file cleaned up.");
   }
+
+  return results.join("\n\n");
 }
 
-async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: string[]): Promise<void> {
+async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: string[]): Promise<string> {
   const proc = Bun.spawn([
     "docker", "sandbox", "exec",
     "-w", worktreeDir,
@@ -178,6 +185,7 @@ async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: 
   const reader = proc.stdout.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let resultText = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -194,7 +202,8 @@ async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: 
 
       try {
         const event: StreamEvent = JSON.parse(line);
-        printEvent(event);
+        const r = printEvent(event);
+        if (r) resultText = r;
       } catch {
         // Skip malformed JSON lines
       }
@@ -205,7 +214,8 @@ async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: 
   if (buffer.trim()) {
     try {
       const event: StreamEvent = JSON.parse(buffer);
-      printEvent(event);
+      const r = printEvent(event);
+      if (r) resultText = r;
     } catch {
       // Skip
     }
@@ -220,9 +230,11 @@ async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: 
     }
     log.warn(`Claude Code exited with code ${exitCode}.`);
   }
+
+  return resultText;
 }
 
-function printEvent(event: StreamEvent): void {
+function printEvent(event: StreamEvent): string | null {
   if (event.type === "assistant" && event.message?.content) {
     for (const block of event.message.content) {
       if (block.type === "text" && block.text) {
@@ -237,8 +249,10 @@ function printEvent(event: StreamEvent): void {
       log.err(event.result || "Unknown error");
     } else if (event.result) {
       log.done(event.result.slice(0, 200));
+      return event.result;
     }
   }
+  return null;
 }
 
 function getToolDetail(name: string, input?: Record<string, unknown>): string {

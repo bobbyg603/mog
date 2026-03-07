@@ -95,14 +95,16 @@ async function main() {
     return;
   }
 
-  const repo = args[0];
-  const issueNum = args[1];
+  const repo = args[0] as string;
+  const issueNum = args[1] as string;
 
-  if (!/^\d+$/.test(issueNum)) {
+  if (!repo || !issueNum || !/^\d+$/.test(issueNum)) {
     log.die(`Invalid issue number: '${issueNum}'. Must be a positive integer.`);
   }
 
-  const [owner, repoName] = repo.split("/");
+  const parts = repo.split("/");
+  const owner = parts[0] as string;
+  const repoName = parts[1] as string;
 
   if (!owner || !repoName) {
     log.die("Invalid repo format. Use: owner/repo");
@@ -144,10 +146,10 @@ async function main() {
   log.info(`Worktree: ${worktreeDir}`);
   console.log();
 
-  await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn);
+  const summary = await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn);
 
   // Push and create PR
-  pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue);
+  pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary);
 }
 
 function getReposDir(): string {
