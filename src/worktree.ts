@@ -36,11 +36,9 @@ export function ensureRepo(
 
   const defaultBranch = branchProc.stdout.toString().trim();
 
-  // Update the main repo to latest before creating worktrees
-  log.info(`Updating ${repoDir} (${defaultBranch})...`);
+  // Fetch latest remote refs (no checkout/pull — avoids conflicts with existing worktrees)
+  log.info(`Fetching latest from origin (${defaultBranch})...`);
   Bun.spawnSync(["git", "fetch", "origin", defaultBranch], { cwd: repoDir });
-  Bun.spawnSync(["git", "checkout", defaultBranch], { cwd: repoDir, stdout: "ignore", stderr: "ignore" });
-  Bun.spawnSync(["git", "pull", "origin", defaultBranch], { cwd: repoDir });
 
   return { defaultBranch };
 }
@@ -81,14 +79,17 @@ export function createWorktree(
   );
 
   if (result.exitCode !== 0) {
-    // Try using existing branch
-    const fallback = Bun.spawnSync(
-      ["git", "worktree", "add", worktreeDir, branchName],
+    // Branch likely exists from a previous run — delete it and retry from origin
+    log.info(`Branch '${branchName}' already exists, recreating from origin/${defaultBranch}...`);
+    Bun.spawnSync(["git", "branch", "-D", branchName], { cwd: repoDir });
+
+    const retry = Bun.spawnSync(
+      ["git", "worktree", "add", "-b", branchName, worktreeDir, `origin/${defaultBranch}`],
       { cwd: repoDir }
     );
 
-    if (fallback.exitCode !== 0) {
-      log.die(`Failed to create worktree. Branch '${branchName}' may already exist.`);
+    if (retry.exitCode !== 0) {
+      log.die(`Failed to create worktree. Branch '${branchName}' may be in use by another worktree.`);
     }
   }
 
