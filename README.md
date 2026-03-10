@@ -19,7 +19,7 @@ That's it. `mog` will:
 ## Prerequisites
 
 - **macOS or Windows** (Docker sandbox microVMs require Docker Desktop)
-- **Docker Desktop** — running and up to date (must support `docker sandbox`)
+- **Docker Desktop 4.40+** — running and up to date. Docker sandbox support (required by mog) was introduced in Docker Desktop 4.40. Verify with `docker sandbox ls`.
 - **Bun** — install from [bun.sh](https://bun.sh)
 - **GitHub CLI** (`gh`) — authenticated via `gh auth login`
 - **Git** with push access to your target repos
@@ -33,6 +33,9 @@ bun install -g @bobbyg603/mog
 ## Quick start
 
 ```bash
+# 0. Verify Docker sandbox support is available
+docker sandbox ls
+
 # 1. One-time setup: create sandbox & authenticate
 mog init
 # This launches Claude Code — use /login to authenticate with your Max subscription
@@ -130,6 +133,10 @@ git worktree remove ../repo-worktrees/123-fix-broken-login
 **"Failed to fetch issue"** — Check `gh auth status` and verify the repo/issue exist.
 
 **"No changes detected"** — Claude may have struggled with the issue. Check the worktree manually, or re-run with a more detailed issue description.
+
+**"Docker sandbox state is stale"** — Restart Docker Desktop, or remove and recreate the sandbox: `docker sandbox rm mog && mog init`.
+
+**"docker: 'sandbox' is not a docker command"** — Your Docker Desktop version doesn't support sandboxes. Update Docker Desktop to **4.40 or later**, then verify with `docker sandbox ls`.
 
 **"Failed to push"** — Ensure `gh` is authenticated with push access. Try `gh auth login` and select HTTPS.
 
