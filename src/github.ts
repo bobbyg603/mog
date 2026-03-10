@@ -28,6 +28,48 @@ export function fetchIssue(repo: string, issueNum: string): Issue {
   };
 }
 
+export function listIssues(repo: string, verbose: boolean): void {
+  log.info(`Fetching open issues for ${repo}...`);
+
+  const fields = verbose
+    ? "number,title,body,labels,assignees"
+    : "number,title";
+
+  const proc = Bun.spawnSync([
+    "gh", "issue", "list",
+    "--repo", repo,
+    "--state", "open",
+    "--json", fields,
+  ]);
+
+  if (proc.exitCode !== 0) {
+    log.die(`Failed to fetch issues for ${repo}. Check the repo name.`);
+  }
+
+  const issues = JSON.parse(proc.stdout.toString());
+
+  if (issues.length === 0) {
+    log.info("No open issues found.");
+    return;
+  }
+
+  log.ok(`${issues.length} open issue(s):\n`);
+
+  for (const issue of issues) {
+    if (verbose) {
+      const labels = issue.labels?.map((l: { name: string }) => l.name).join(", ") || "none";
+      const assignees = issue.assignees?.map((a: { login: string }) => a.login).join(", ") || "unassigned";
+      console.log(`  #${issue.number}  ${issue.title}`);
+      console.log(`         Labels: ${labels}`);
+      console.log(`         Assignees: ${assignees}`);
+      console.log(`         ${(issue.body || "No description.").split("\n")[0]}`);
+      console.log();
+    } else {
+      console.log(`  #${issue.number}  ${issue.title}`);
+    }
+  }
+}
+
 export function pushAndCreatePR(
   repo: string,
   worktreeDir: string,
