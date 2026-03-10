@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { fetchIssue } from "./github";
+import { fetchIssue, listIssues } from "./github";
 import { detectRepo, ensureRepo, createWorktree } from "./worktree";
 import { runClaude } from "./sandbox";
 import { pushAndCreatePR } from "./github";
@@ -84,16 +84,39 @@ async function main() {
     return;
   }
 
+  // mog list [--verbose]  or  mog <owner/repo> list [--verbose]
+  if (args[0] === "list" || args[1] === "list") {
+    let repo: string;
+    const verbose = args.includes("--verbose");
+
+    if (args[0] === "list") {
+      const detected = detectRepo();
+      if (!detected) {
+        log.die("Could not detect repo from git remote. Run from inside a git repo or use: mog <owner/repo> list");
+      }
+      repo = detected;
+    } else {
+      repo = args[0];
+    }
+
+    listIssues(repo, verbose);
+    return;
+  }
+
   if (args.length < 1) {
     console.log("Usage:");
     console.log("  mog init                      — one-time setup (create sandbox & login)");
     console.log("  mog <issue_num>               — auto-detect repo from git remote");
     console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
+    console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
+    console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
     console.log();
     console.log("Example:");
     console.log("  mog init");
     console.log("  mog 123");
     console.log("  mog workingdevshero/automate-it 123");
+    console.log("  mog list");
+    console.log("  mog list --verbose");
     return;
   }
 
@@ -120,11 +143,15 @@ async function main() {
     console.log("  mog init                      — one-time setup (create sandbox & login)");
     console.log("  mog <issue_num>               — auto-detect repo from git remote");
     console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
+    console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
+    console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
     console.log();
     console.log("Example:");
     console.log("  mog init");
     console.log("  mog 123");
     console.log("  mog workingdevshero/automate-it 123");
+    console.log("  mog list");
+    console.log("  mog list --verbose");
     return;
   }
 
