@@ -1,6 +1,29 @@
 import fs from "fs";
 import { log } from "./log";
 
+export function detectRepo(): string | null {
+  const result = Bun.spawnSync(["git", "remote", "get-url", "origin"]);
+  if (result.exitCode !== 0) {
+    return null;
+  }
+
+  const url = result.stdout.toString().trim();
+
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = url.match(/^git@[^:]+:([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (sshMatch) {
+    return `${sshMatch[1]}/${sshMatch[2]}`;
+  }
+
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = url.match(/^https?:\/\/[^/]+\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (httpsMatch) {
+    return `${httpsMatch[1]}/${httpsMatch[2]}`;
+  }
+
+  return null;
+}
+
 export function ensureRepo(
   repo: string,
   owner: string,
