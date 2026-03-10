@@ -19,7 +19,7 @@ That's it. `mog` will:
 ## Prerequisites
 
 - **macOS or Windows** (Docker sandbox microVMs require Docker Desktop)
-- **Docker Desktop** — running and up to date (must support `docker sandbox`)
+- **Docker Desktop 4.40+** — running and up to date. Docker sandbox support (required by mog) was introduced in Docker Desktop 4.40. Verify with `docker sandbox ls`.
 - **Bun** — install from [bun.sh](https://bun.sh)
 - **GitHub CLI** (`gh`) — authenticated via `gh auth login`
 - **Git** with push access to your target repos
