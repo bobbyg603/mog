@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { fetchIssue } from "./github";
-import { ensureRepo, createWorktree } from "./worktree";
+import { detectRepo, ensureRepo, createWorktree } from "./worktree";
 import { runClaude } from "./sandbox";
 import { pushAndCreatePR } from "./github";
 import { log } from "./log";
@@ -54,7 +54,7 @@ async function init() {
     log.ok("Snapshot saved.");
   }
 
-  log.ok("mog is ready. Run: mog <owner/repo> <issue_number>");
+  log.ok("mog is ready. Run: mog <issue_number> (from a git repo) or mog <owner/repo> <issue_number>");
 }
 
 async function main() {
@@ -84,22 +84,48 @@ async function main() {
     return;
   }
 
-  if (args.length < 2) {
+  if (args.length < 1) {
     console.log("Usage:");
     console.log("  mog init                      — one-time setup (create sandbox & login)");
+    console.log("  mog <issue_num>               — auto-detect repo from git remote");
     console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
     console.log();
     console.log("Example:");
     console.log("  mog init");
+    console.log("  mog 123");
     console.log("  mog workingdevshero/automate-it 123");
     return;
   }
 
-  const repo = args[0] as string;
-  const issueNum = args[1] as string;
+  let repo: string;
+  let issueNum: string;
 
-  if (!repo || !issueNum || !/^\d+$/.test(issueNum)) {
-    log.die(`Invalid issue number: '${issueNum}'. Must be a positive integer.`);
+  if (/^\d+$/.test(args[0])) {
+    // mog <issue_number> — auto-detect repo
+    const detected = detectRepo();
+    if (!detected) {
+      log.die("Could not detect repo from git remote. Run from inside a git repo or use: mog <owner/repo> <issue_num>");
+    }
+    repo = detected;
+    issueNum = args[0];
+  } else if (args.length >= 2) {
+    // mog <owner/repo> <issue_number>
+    repo = args[0];
+    issueNum = args[1];
+    if (!/^\d+$/.test(issueNum)) {
+      log.die(`Invalid issue number: '${issueNum}'. Must be a positive integer.`);
+    }
+  } else {
+    console.log("Usage:");
+    console.log("  mog init                      — one-time setup (create sandbox & login)");
+    console.log("  mog <issue_num>               — auto-detect repo from git remote");
+    console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
+    console.log();
+    console.log("Example:");
+    console.log("  mog init");
+    console.log("  mog 123");
+    console.log("  mog workingdevshero/automate-it 123");
+    return;
   }
 
   const parts = repo.split("/");
