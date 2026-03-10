@@ -134,6 +134,10 @@ git worktree remove ../repo-worktrees/123-fix-broken-login
 
 **"No changes detected"** — Claude may have struggled with the issue. Check the worktree manually, or re-run with a more detailed issue description.
 
+**"Docker sandbox state is stale"** — Restart Docker Desktop, or remove and recreate the sandbox: `docker sandbox rm mog && mog init`.
+
+**"docker: 'sandbox' is not a docker command"** — Your Docker Desktop version doesn't support sandboxes. Update Docker Desktop to **4.40 or later**, then verify with `docker sandbox ls`.
+
 **"Failed to push"** — Ensure `gh` is authenticated with push access. Try `gh auth login` and select HTTPS.
 
 ## Managing the sandbox
