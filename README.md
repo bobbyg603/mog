@@ -33,6 +33,9 @@ bun install -g @bobbyg603/mog
 ## Quick start
 
 ```bash
+# 0. Verify Docker sandbox support is available
+docker sandbox ls
+
 # 1. One-time setup: create sandbox & authenticate
 mog init
 # This launches Claude Code — use /login to authenticate with your Max subscription
