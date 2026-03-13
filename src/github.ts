@@ -107,6 +107,22 @@ export function pushAndCreatePR(
     }
   }
 
+  // Squash all commits into one
+  const commitCount = Bun.spawnSync(["git", "rev-list", "--count", `${defaultBranch}..HEAD`], { cwd: worktreeDir });
+  const count = parseInt(commitCount.stdout.toString().trim(), 10) || 0;
+  if (count > 1) {
+    log.info(`Squashing ${count} commits into one...`);
+    const prefix = issue.labels.includes("enhancement") || issue.labels.includes("feature") ? "feat" : "fix";
+    const squash = Bun.spawnSync(["git", "reset", "--soft", defaultBranch], { cwd: worktreeDir });
+    if (squash.exitCode === 0) {
+      const msg = `${prefix}: ${issue.title} (#${issueNum})`;
+      Bun.spawnSync(["git", "commit", "-m", msg], { cwd: worktreeDir });
+      log.ok("Commits squashed.");
+    } else {
+      log.warn("Failed to squash — pushing individual commits instead.");
+    }
+  }
+
   // Push
   log.info(`Pushing branch '${branchName}' to origin...`);
   const push = Bun.spawnSync(["git", "push", "-u", "origin", branchName], { cwd: worktreeDir });
