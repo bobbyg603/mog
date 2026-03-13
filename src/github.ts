@@ -115,7 +115,7 @@ export function pushAndCreatePR(
     const prefix = issue.labels.includes("enhancement") || issue.labels.includes("feature") ? "feat" : "fix";
     const squash = Bun.spawnSync(["git", "reset", "--soft", defaultBranch], { cwd: worktreeDir });
     if (squash.exitCode === 0) {
-      const msg = `${prefix}: ${issue.title} (#${issueNum})`;
+      const msg = `${prefix}: ${issue.title.toLowerCase()} (#${issueNum})`;
       Bun.spawnSync(["git", "commit", "-m", msg], { cwd: worktreeDir });
       log.ok("Commits squashed.");
     } else {
