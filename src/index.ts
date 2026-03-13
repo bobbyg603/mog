@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import fs from "fs";
+import path from "path";
 import { fetchIssue, listIssues } from "./github";
 import { detectRepo, ensureRepo, createWorktree } from "./worktree";
 import { runClaude } from "./sandbox";
@@ -111,30 +113,50 @@ async function main() {
     console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
     console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
     console.log();
+    console.log("Options:");
+    console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+    console.log();
     console.log("Example:");
     console.log("  mog init");
     console.log("  mog 123");
+    console.log("  mog 123 --include .env");
     console.log("  mog workingdevshero/automate-it 123");
     console.log("  mog list");
     console.log("  mog list --verbose");
     return;
   }
 
+  // Parse --include flags
+  const includeFiles: string[] = [];
+  const filteredArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--include" && i + 1 < args.length) {
+      const filePath = path.resolve(args[i + 1]!);
+      if (!fs.existsSync(filePath)) {
+        log.die(`Include file not found: ${args[i + 1]}`);
+      }
+      includeFiles.push(filePath);
+      i++; // skip the path argument
+    } else {
+      filteredArgs.push(args[i]!);
+    }
+  }
+
   let repo: string;
   let issueNum: string;
 
-  if (/^\d+$/.test(args[0])) {
+  if (/^\d+$/.test(filteredArgs[0])) {
     // mog <issue_number> — auto-detect repo
     const detected = detectRepo();
     if (!detected) {
       log.die("Could not detect repo from git remote. Run from inside a git repo or use: mog <owner/repo> <issue_num>");
     }
     repo = detected;
-    issueNum = args[0];
-  } else if (args.length >= 2) {
+    issueNum = filteredArgs[0];
+  } else if (filteredArgs.length >= 2) {
     // mog <owner/repo> <issue_number>
-    repo = args[0];
-    issueNum = args[1];
+    repo = filteredArgs[0];
+    issueNum = filteredArgs[1];
     if (!/^\d+$/.test(issueNum)) {
       log.die(`Invalid issue number: '${issueNum}'. Must be a positive integer.`);
     }
@@ -146,9 +168,13 @@ async function main() {
     console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
     console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
     console.log();
+    console.log("Options:");
+    console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+    console.log();
     console.log("Example:");
     console.log("  mog init");
     console.log("  mog 123");
+    console.log("  mog 123 --include .env");
     console.log("  mog workingdevshero/automate-it 123");
     console.log("  mog list");
     console.log("  mog list --verbose");
@@ -188,6 +214,16 @@ async function main() {
     reposDir, owner, repoName, defaultBranch, issueNum, issue.title
   );
 
+  // Copy included files into worktree
+  const copiedFiles: string[] = [];
+  for (const filePath of includeFiles) {
+    const basename = path.basename(filePath);
+    const dest = path.join(worktreeDir, basename);
+    fs.copyFileSync(filePath, dest);
+    copiedFiles.push(dest);
+    log.ok(`Included: ${basename}`);
+  }
+
   // Build prompts
   const planningPrompt = buildPlanningPrompt(repo, issueNum, issue);
   const buildingPromptFn = (remaining: string[], plan: string) =>
@@ -201,6 +237,17 @@ async function main() {
   console.log();
 
   const summary = await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn, reviewPrompt);
+
+  // Remove included files so they don't end up in the PR
+  for (const filePath of copiedFiles) {
+    try {
+      fs.unlinkSync(filePath);
+      // Unstage if Claude happened to git add it
+      Bun.spawnSync(["git", "rm", "--cached", "--ignore-unmatch", path.basename(filePath)], { cwd: worktreeDir });
+    } catch {
+      // File may already be gone
+    }
+  }
 
   // Push and create PR
   pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary);
