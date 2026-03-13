@@ -76,6 +76,7 @@ export async function runClaude(
   worktreeDir: string,
   planningPrompt: string,
   buildingPromptFn: (remainingItems: string[], planContent: string) => string,
+  reviewPrompt?: string,
 ): Promise<string> {
   let lastResult = "";
 
@@ -152,7 +153,14 @@ export async function runClaude(
     }
   }
 
-  // Phase 3 — Cleanup
+  // Phase 3 — Review
+  if (reviewPrompt) {
+    log.info("Phase 3: Reviewing changes for quality and completeness...");
+    const reviewResult = await execClaude(sandboxName, worktreeDir, ["-p", reviewPrompt]);
+    if (reviewResult) lastResult = reviewResult;
+  }
+
+  // Phase 4 — Cleanup
   cleanupPlanFile(sandboxName, worktreeDir);
 
   const finalPlan = readPlanFile(worktreeDir);

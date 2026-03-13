@@ -192,6 +192,7 @@ async function main() {
   const planningPrompt = buildPlanningPrompt(repo, issueNum, issue);
   const buildingPromptFn = (remaining: string[], plan: string) =>
     buildBuildingPrompt(repo, issueNum, issue, remaining, plan);
+  const reviewPrompt = buildReviewPrompt(repo, issueNum, issue);
 
   // Run Claude in sandbox
   log.info("Launching Claude Code in sandbox...");
@@ -199,7 +200,7 @@ async function main() {
   log.info(`Worktree: ${worktreeDir}`);
   console.log();
 
-  const summary = await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn);
+  const summary = await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn, reviewPrompt);
 
   // Push and create PR
   pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary);
@@ -270,13 +271,16 @@ ${issue.labels}
 Your job in this step is to **plan only** — do NOT implement anything and do NOT commit.
 
 1. Read and understand the codebase structure thoroughly.
-2. Analyze the issue and break it down into small, atomic implementation tasks.
-3. Create a file called \`IMPLEMENTATION_PLAN.md\` in the root of the repository with a checklist of tasks.
+2. **Search the entire codebase** for code related to the issue — look for similar patterns, duplicate logic, and any modules that handle the same concern. Use Grep and Glob liberally to find all relevant locations, not just the most obvious one.
+3. Analyze the issue and break it down into small, atomic implementation tasks.
+4. Create a file called \`IMPLEMENTATION_PLAN.md\` in the root of the repository with a checklist of tasks.
 
 The plan should:
 - Have 3-8 tasks (fewer for simple issues, more for complex ones)
 - Order tasks by dependency (implement foundations first)
 - Each task should be a single, atomic unit of work that results in one commit
+- **Include tasks to update ALL locations** where the same pattern or concern exists — not just the most obvious one. If the same logic appears in multiple modules, the plan must cover all of them.
+- If you find duplicate or near-duplicate logic across modules, include a task to consolidate it into a shared utility or function.
 - Use markdown checklist format: \`- [ ] Task description\`
 
 Example format:
@@ -315,7 +319,7 @@ ${issue.labels}
 1. Read and understand the codebase structure first.
 2. Implement the changes described in the issue above.
 3. Write clean, well-documented code that follows the existing project conventions.
-4. Add or update tests if applicable.
+4. If the project has an existing test suite, add or update tests to cover the changes.
 5. Make sure the code builds/lints without errors if there's a build system.
 6. Commit your changes with a clear commit message referencing issue #${issueNum}.
 
@@ -350,6 +354,34 @@ Rules:
 3. Update \`IMPLEMENTATION_PLAN.md\` to check off the completed item (change \`- [ ]\` to \`- [x]\`).
 4. Commit ALL changes (including the updated plan file) with a message like: "feat: ${currentTask.toLowerCase()} (#${issueNum})"
 5. Do NOT work on any other tasks after committing.`;
+}
+
+function buildReviewPrompt(
+  repo: string,
+  issueNum: string,
+  issue: { title: string; body: string; labels: string },
+): string {
+  return `You are reviewing changes made for GitHub issue #${issueNum} in the repository ${repo}.
+
+## Issue: ${issue.title}
+
+### Description
+${issue.body}
+
+## Instructions
+
+All implementation tasks are complete. Your job is to **review the entire branch** for quality and completeness.
+
+Run \`git diff main...HEAD\` (or the equivalent for the default branch) to see all changes made.
+
+Check for:
+1. **Missed locations**: Search the codebase for similar patterns, logic, or code that handles the same concern as the changes. If the fix or feature was applied in one place but a similar pattern exists elsewhere, apply it there too.
+2. **Code duplication**: If the changes introduced logic that duplicates existing code (or if pre-existing duplication was missed), consolidate it into a shared function or utility.
+3. **Quality issues**: Look for missing edge cases, error handling gaps, or inconsistencies with the rest of the codebase.
+4. **Tests**: If the project has an existing test suite, verify that tests were added or updated to cover the changes. If not, add them. Do not create a test framework or test infrastructure from scratch.
+
+If you find issues, fix them and commit each fix separately with a clear commit message referencing #${issueNum}.
+If everything looks good, do nothing.`;
 }
 
 main().catch((err) => {
