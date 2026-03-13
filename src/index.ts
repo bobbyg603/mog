@@ -2,10 +2,11 @@
 
 import fs from "fs";
 import path from "path";
-import { fetchIssue, listIssues } from "./github";
+import { fetchIssue, listIssues, fetchPRFeedback } from "./github";
 import { detectRepo, ensureRepo, createWorktree } from "./worktree";
 import { runClaude } from "./sandbox";
 import { pushAndCreatePR } from "./github";
+import type { PRFeedback } from "./github";
 import { log } from "./log";
 
 const SANDBOX_NAME = "mog";
@@ -115,6 +116,7 @@ async function main() {
     console.log();
     console.log("Options:");
     console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+    console.log("  --fresh                       — ignore existing PR, start a brand new one");
     console.log();
     console.log("Example:");
     console.log("  mog init");
@@ -126,9 +128,10 @@ async function main() {
     return;
   }
 
-  // Parse --include flags
+  // Parse --include and --fresh flags
   const includeFiles: string[] = [];
   const filteredArgs: string[] = [];
+  let fresh = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--include" && i + 1 < args.length) {
       const filePath = path.resolve(args[i + 1]!);
@@ -137,6 +140,8 @@ async function main() {
       }
       includeFiles.push(filePath);
       i++; // skip the path argument
+    } else if (args[i] === "--fresh") {
+      fresh = true;
     } else {
       filteredArgs.push(args[i]!);
     }
@@ -170,6 +175,7 @@ async function main() {
     console.log();
     console.log("Options:");
     console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+    console.log("  --fresh                       — ignore existing PR, start a brand new one");
     console.log();
     console.log("Example:");
     console.log("  mog init");
@@ -214,6 +220,16 @@ async function main() {
     reposDir, owner, repoName, defaultBranch, issueNum, issue.title
   );
 
+  // Check for existing PR (unless --fresh)
+  let existingPR: PRFeedback | undefined;
+  if (!fresh) {
+    const pr = fetchPRFeedback(repo, branchName);
+    if (pr) {
+      existingPR = pr;
+      log.ok(`Found existing PR #${pr.prNumber} — will include review feedback and update it.`);
+    }
+  }
+
   // Copy included files into worktree
   const copiedFiles: string[] = [];
   for (const filePath of includeFiles) {
@@ -225,7 +241,8 @@ async function main() {
   }
 
   // Build prompts
-  const planningPrompt = buildPlanningPrompt(repo, issueNum, issue);
+  const prFeedback = existingPR?.reviews || "";
+  const planningPrompt = buildPlanningPrompt(repo, issueNum, issue, prFeedback);
   const buildingPromptFn = (remaining: string[], plan: string) =>
     buildBuildingPrompt(repo, issueNum, issue, remaining, plan);
   const reviewPrompt = buildReviewPrompt(repo, issueNum, issue);
@@ -249,8 +266,8 @@ async function main() {
     }
   }
 
-  // Push and create PR
-  pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary);
+  // Push and create/update PR
+  pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary, existingPR);
 }
 
 function getReposDir(): string {
@@ -302,7 +319,7 @@ function tryRecoverSandbox(reposDir: string): boolean {
   return true;
 }
 
-function formatIssueContext(issueNum: string, issue: { title: string; body: string; labels: string; comments: string }): string {
+function formatIssueContext(issueNum: string, issue: { title: string; body: string; labels: string; comments: string }, prFeedback?: string): string {
   let context = `## Issue: ${issue.title}
 
 ### Description
@@ -318,13 +335,22 @@ ${issue.labels}`;
 ${issue.comments}`;
   }
 
+  if (prFeedback) {
+    context += `
+
+### Previous PR Review Feedback
+A previous attempt at this issue was reviewed. Address the following feedback in your implementation:
+
+${prFeedback}`;
+  }
+
   return context;
 }
 
-function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string; comments: string }): string {
+function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string; comments: string }, prFeedback?: string): string {
   return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
 
-${formatIssueContext(issueNum, issue)}
+${formatIssueContext(issueNum, issue, prFeedback)}
 
 ## Instructions
 

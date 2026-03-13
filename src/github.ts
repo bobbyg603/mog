@@ -76,6 +76,57 @@ export function listIssues(repo: string, verbose: boolean): void {
   }
 }
 
+export interface PRFeedback {
+  prNumber: number;
+  prUrl: string;
+  reviews: string;
+}
+
+export function fetchPRFeedback(repo: string, branchName: string): PRFeedback | null {
+  const proc = Bun.spawnSync([
+    "gh", "pr", "list",
+    "--repo", repo,
+    "--head", branchName,
+    "--state", "open",
+    "--json", "number,url",
+  ]);
+
+  if (proc.exitCode !== 0) return null;
+
+  const prs = JSON.parse(proc.stdout.toString());
+  if (prs.length === 0) return null;
+
+  const prNumber = prs[0].number;
+  const prUrl = prs[0].url;
+
+  // Fetch review comments
+  const reviewProc = Bun.spawnSync([
+    "gh", "pr", "view", String(prNumber),
+    "--repo", repo,
+    "--json", "reviews,comments",
+  ]);
+
+  let reviews = "";
+  if (reviewProc.exitCode === 0) {
+    const data = JSON.parse(reviewProc.stdout.toString());
+
+    const reviewEntries = (data.reviews || [])
+      .filter((r: { body: string }) => r.body?.trim())
+      .map((r: { author: { login: string }; state: string; body: string }) =>
+        `**@${r.author.login}** (${r.state}):\n${r.body}`
+      );
+
+    const commentEntries = (data.comments || [])
+      .map((c: { author: { login: string }; body: string }) =>
+        `**@${c.author.login}:**\n${c.body}`
+      );
+
+    reviews = [...reviewEntries, ...commentEntries].join("\n\n");
+  }
+
+  return { prNumber, prUrl, reviews };
+}
+
 export function pushAndCreatePR(
   repo: string,
   worktreeDir: string,
@@ -83,7 +134,8 @@ export function pushAndCreatePR(
   defaultBranch: string,
   issueNum: string,
   issue: Issue,
-  summary?: string
+  summary?: string,
+  existingPR?: PRFeedback,
 ): void {
   // Check for unpushed commits or uncommitted changes
   const unpushed = Bun.spawnSync(["git", "log", `origin/${defaultBranch}..HEAD`, "--oneline"], { cwd: worktreeDir });
@@ -129,13 +181,27 @@ export function pushAndCreatePR(
     }
   }
 
-  // Push
+  // Push (force-with-lease when updating an existing PR)
   log.info(`Pushing branch '${branchName}' to origin...`);
-  const push = Bun.spawnSync(["git", "push", "-u", "origin", branchName], { cwd: worktreeDir });
+  const pushArgs = existingPR
+    ? ["git", "push", "--force-with-lease", "-u", "origin", branchName]
+    : ["git", "push", "-u", "origin", branchName];
+  const push = Bun.spawnSync(pushArgs, { cwd: worktreeDir });
   if (push.exitCode !== 0) {
     log.die("Failed to push. Check your git credentials.");
   }
   log.ok("Branch pushed.");
+
+  if (existingPR) {
+    // Update existing PR
+    log.ok("Existing PR updated!");
+    console.log(`\x1b[0;32m${existingPR.prUrl}\x1b[0m`);
+    console.log();
+    log.ok(`All done! Issue #${issueNum} → Branch '${branchName}' → PR updated.`);
+    log.info(`Worktree: ${worktreeDir}`);
+    log.info(`To clean up the worktree later: git worktree remove ${worktreeDir}`);
+    return;
+  }
 
   // Create PR
   log.info("Opening pull request...");
