@@ -11,10 +11,13 @@ mog workingdevshero/automate-it 123
 
 That's it. `mog` will:
 
-1. Fetch the issue title, description, and labels via `gh` CLI
+1. Fetch the issue title, description, labels, and comments via `gh` CLI
 2. Create a git worktree on a clean branch (`123-fix-broken-login`)
 3. Run Claude Code inside a persistent Docker sandbox (microVM) with `--dangerously-skip-permissions`
-4. Push the branch and open a PR that `Closes #123`
+4. **Plan** — analyze the codebase and create an implementation plan
+5. **Build** — execute each task in the plan, one at a time
+6. **Review** — self-review all changes for missed patterns, duplication, and quality
+7. Squash commits, push the branch, and open a PR that `Closes #123`
 
 ## Prerequisites
 
@@ -57,12 +60,37 @@ If your session ever expires, just run `mog init` again to re-authenticate.
 # One-time setup
 mog init
 
-# Basic usage
-mog owner/repo issue_number
+# Auto-detect repo from git remote (run from inside a git repo)
+mog 123
 
-# Examples
-mog workingdevshero/automate-it 123
-mog sparx-tech/hub-firmware 45
+# Explicit repo
+mog owner/repo 123
+
+# Include files the project needs at runtime (e.g. .env, credentials)
+# Files are copied into the worktree and removed before pushing
+mog 123 --include .env --include serviceAccountKey.json
+
+# List open issues
+mog list
+mog list --verbose
+mog owner/repo list --verbose
+```
+
+### Re-mogging
+
+Running `mog` again on an issue that already has an open PR will:
+
+1. Fetch review comments and feedback from the existing PR
+2. Include that feedback in the prompt so Claude addresses it
+3. Start fresh from the default branch
+4. Force-push to update the existing PR
+
+```bash
+# Re-mog after getting PR feedback — Claude sees reviewer comments
+mog 123
+
+# Start completely over, ignoring the existing PR
+mog 123 --fresh
 ```
 
 ## How it works
@@ -71,7 +99,8 @@ mog sparx-tech/hub-firmware 45
 ┌──────────────────────────────────────────────────────────┐
 │  Host machine                                            │
 │                                                          │
-│  1. gh issue view #123 → fetch title, body, labels       │
+│  1. gh issue view #123 → fetch title, body, labels,      │
+│     comments, and PR review feedback (if re-mogging)     │
 │  2. git worktree add → clean branch from default branch  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
@@ -80,12 +109,14 @@ mog sparx-tech/hub-firmware 45
 │  │  • ~/mog-repos mounted as workspace                │  │
 │  │  • Auth persists across runs (login once)          │  │
 │  │  • Isolated from host (own Docker daemon)          │  │
-│  │  • claude --dangerously-skip-permissions -p "..."  │  │
-│  │  • Reads code, implements fix, commits             │  │
+│  │  • Phase 1: Plan — analyze codebase, create plan   │  │
+│  │  • Phase 2: Build — execute tasks one at a time    │  │
+│  │  • Phase 3: Review — self-review for quality       │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
-│  3. git push origin branch                               │
-│  4. gh pr create --body "Closes #123"                    │
+│  3. Squash commits into one                              │
+│  4. git push origin branch (force-push if updating PR)   │
+│  5. gh pr create --body "Closes #123" (or update PR)     │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -94,7 +125,7 @@ mog sparx-tech/hub-firmware 45
 | Environment Variable | Default | Description |
 |---|---|---|
 | `MOG_REPOS_DIR` | `~/mog-repos` | Where repos are cloned and worktrees created (also the sandbox workspace) |
-| `MOG_MAX_ITERATIONS` | `10` | Max build loop iterations per issue |
+| `MOG_MAX_ITERATIONS` | `30` | Max build loop iterations per issue |
 | `MOG_MAX_CONTINUATIONS` | — | Legacy alias for `MOG_MAX_ITERATIONS` |
 
 ## Worktree management
