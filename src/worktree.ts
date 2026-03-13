@@ -73,7 +73,7 @@ export function createWorktree(
   defaultBranch: string,
   issueNum: string,
   issueTitle: string
-): { worktreeDir: string; branchName: string } {
+): { worktreeDir: string; branchName: string; reused: boolean } {
   const safeTitle = issueTitle
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "-")
@@ -87,7 +87,7 @@ export function createWorktree(
 
   if (fs.existsSync(worktreeDir)) {
     log.warn(`Worktree already exists at ${worktreeDir}, reusing.`);
-    return { worktreeDir, branchName };
+    return { worktreeDir, branchName, reused: true };
   }
 
   log.info(`Creating worktree for branch '${branchName}'...`);
@@ -120,5 +120,5 @@ export function createWorktree(
   Bun.spawnSync(["git", "submodule", "update", "--init", "--recursive"], { cwd: worktreeDir });
 
   log.ok(`Worktree created at ${worktreeDir}`);
-  return { worktreeDir, branchName };
+  return { worktreeDir, branchName, reused: false };
 }

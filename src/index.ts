@@ -216,16 +216,18 @@ async function main() {
   const { defaultBranch } = ensureRepo(repo, owner, repoName, reposDir);
   log.info(`Default branch: ${defaultBranch}`);
 
-  const { worktreeDir, branchName } = createWorktree(
+  const { worktreeDir, branchName, reused } = createWorktree(
     reposDir, owner, repoName, defaultBranch, issueNum, issue.title
   );
 
   // Check for existing PR (unless --fresh)
   let existingPR: PRFeedback | undefined;
+  let isRetry = reused;
   if (!fresh) {
     const pr = fetchPRFeedback(repo, branchName);
     if (pr) {
       existingPR = pr;
+      isRetry = true;
       log.ok(`Found existing PR #${pr.prNumber} — will include review feedback and update it.`);
     }
   }
@@ -242,7 +244,7 @@ async function main() {
 
   // Build prompts
   const prFeedback = existingPR?.reviews || "";
-  const planningPrompt = buildPlanningPrompt(repo, issueNum, issue, prFeedback);
+  const planningPrompt = buildPlanningPrompt(repo, issueNum, issue, prFeedback, isRetry);
   const buildingPromptFn = (remaining: string[], plan: string) =>
     buildBuildingPrompt(repo, issueNum, issue, remaining, plan);
   const reviewPrompt = buildReviewPrompt(repo, issueNum, issue);
@@ -319,7 +321,7 @@ function tryRecoverSandbox(reposDir: string): boolean {
   return true;
 }
 
-function formatIssueContext(issueNum: string, issue: { title: string; body: string; labels: string; comments: string }, prFeedback?: string): string {
+function formatIssueContext(issueNum: string, issue: { title: string; body: string; labels: string; comments: string }, prFeedback?: string, isRetry?: boolean): string {
   let context = `## Issue: ${issue.title}
 
 ### Description
@@ -335,22 +337,29 @@ ${issue.labels}`;
 ${issue.comments}`;
   }
 
-  if (prFeedback) {
+  if (isRetry) {
     context += `
 
+### Re-attempt Notice
+**This is a re-attempt of a previous run.** The issue description, comments, or requirements may have been updated since the last attempt. Carefully review ALL context above to catch anything that may have changed.`;
+
+    if (prFeedback) {
+      context += `
+
 ### Previous PR Review Feedback
-A previous attempt at this issue was reviewed. Address the following feedback in your implementation:
+Address the following reviewer feedback in your implementation:
 
 ${prFeedback}`;
+    }
   }
 
   return context;
 }
 
-function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string; comments: string }, prFeedback?: string): string {
+function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string; comments: string }, prFeedback?: string, isRetry?: boolean): string {
   return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
 
-${formatIssueContext(issueNum, issue, prFeedback)}
+${formatIssueContext(issueNum, issue, prFeedback, isRetry)}
 
 ## Instructions
 
