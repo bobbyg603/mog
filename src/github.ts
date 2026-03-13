@@ -4,6 +4,7 @@ export interface Issue {
   title: string;
   body: string;
   labels: string;
+  comments: string;
 }
 
 export function fetchIssue(repo: string, issueNum: string): Issue {
@@ -12,7 +13,7 @@ export function fetchIssue(repo: string, issueNum: string): Issue {
   const proc = Bun.spawnSync([
     "gh", "issue", "view", issueNum,
     "--repo", repo,
-    "--json", "title,body,labels",
+    "--json", "title,body,labels,comments",
   ]);
 
   if (proc.exitCode !== 0) {
@@ -21,10 +22,15 @@ export function fetchIssue(repo: string, issueNum: string): Issue {
 
   const json = JSON.parse(proc.stdout.toString());
 
+  const comments = (json.comments || [])
+    .map((c: { author: { login: string }; body: string }) => `**@${c.author.login}:** ${c.body}`)
+    .join("\n\n");
+
   return {
     title: json.title,
     body: json.body || "No description provided.",
     labels: json.labels?.map((l: { name: string }) => l.name).join(", ") || "none",
+    comments,
   };
 }
 

@@ -302,16 +302,29 @@ function tryRecoverSandbox(reposDir: string): boolean {
   return true;
 }
 
-function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string }): string {
-  return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
-
-## Issue: ${issue.title}
+function formatIssueContext(issueNum: string, issue: { title: string; body: string; labels: string; comments: string }): string {
+  let context = `## Issue: ${issue.title}
 
 ### Description
 ${issue.body}
 
 ### Labels
-${issue.labels}
+${issue.labels}`;
+
+  if (issue.comments) {
+    context += `
+
+### Comments
+${issue.comments}`;
+  }
+
+  return context;
+}
+
+function buildPlanningPrompt(repo: string, issueNum: string, issue: { title: string; body: string; labels: string; comments: string }): string {
+  return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
+
+${formatIssueContext(issueNum, issue)}
 
 ## Instructions
 
@@ -346,7 +359,7 @@ Do NOT implement any code changes. Do NOT make any commits. Only create the plan
 function buildBuildingPrompt(
   repo: string,
   issueNum: string,
-  issue: { title: string; body: string; labels: string },
+  issue: { title: string; body: string; labels: string; comments: string },
   remainingItems: string[],
   planContent: string,
 ): string {
@@ -354,13 +367,7 @@ function buildBuildingPrompt(
   if (remainingItems.length === 0 && !planContent) {
     return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
 
-## Issue: ${issue.title}
-
-### Description
-${issue.body}
-
-### Labels
-${issue.labels}
+${formatIssueContext(issueNum, issue)}
 
 ## Instructions
 1. Read and understand the codebase structure first.
@@ -378,13 +385,7 @@ a message like: "fix: <short description> (#${issueNum})"`;
 
   return `You are working on GitHub issue #${issueNum} for the repository ${repo}.
 
-## Issue: ${issue.title}
-
-### Description
-${issue.body}
-
-### Labels
-${issue.labels}
+${formatIssueContext(issueNum, issue)}
 
 ## Current Implementation Plan
 
@@ -406,14 +407,11 @@ Rules:
 function buildReviewPrompt(
   repo: string,
   issueNum: string,
-  issue: { title: string; body: string; labels: string },
+  issue: { title: string; body: string; labels: string; comments: string },
 ): string {
   return `You are reviewing changes made for GitHub issue #${issueNum} in the repository ${repo}.
 
-## Issue: ${issue.title}
-
-### Description
-${issue.body}
+${formatIssueContext(issueNum, issue)}
 
 ## Instructions
 
