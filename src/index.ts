@@ -2,10 +2,9 @@
 
 import fs from "fs";
 import path from "path";
-import { fetchIssue, listIssues, fetchPRFeedback } from "./github";
+import { fetchIssue, listIssues, fetchPRFeedback, closePR, cleanIssueTitle, pushAndCreatePR } from "./github";
 import { detectRepo, ensureRepo, createWorktree } from "./worktree";
 import { runClaude } from "./sandbox";
-import { pushAndCreatePR } from "./github";
 import type { PRFeedback } from "./github";
 import { log } from "./log";
 
@@ -217,19 +216,21 @@ async function main() {
   log.info(`Default branch: ${defaultBranch}`);
 
   const { worktreeDir, branchName, reused } = createWorktree(
-    reposDir, owner, repoName, defaultBranch, issueNum, issue.title
+    reposDir, owner, repoName, defaultBranch, issueNum, cleanIssueTitle(issue.title), fresh
   );
 
-  // Check for existing PR (unless --fresh)
+  // Check for existing PR
   let existingPR: PRFeedback | undefined;
-  let isRetry = reused;
-  if (!fresh) {
-    const pr = fetchPRFeedback(repo, branchName);
-    if (pr) {
-      existingPR = pr;
-      isRetry = true;
-      log.ok(`Found existing PR #${pr.prNumber} — will include review feedback and update it.`);
-    }
+  let isRetry = fresh ? false : reused;
+  const pr = fetchPRFeedback(repo, branchName);
+  if (pr && fresh) {
+    log.info(`--fresh: closing existing PR #${pr.prNumber} and deleting remote branch...`);
+    closePR(repo, pr.prNumber);
+    log.ok(`PR #${pr.prNumber} closed. A new PR will be created.`);
+  } else if (pr) {
+    existingPR = pr;
+    isRetry = true;
+    log.ok(`Found existing PR #${pr.prNumber} — will include review feedback and update it.`);
   }
 
   // Copy included files into worktree
@@ -243,11 +244,12 @@ async function main() {
   }
 
   // Build prompts
-  const prFeedback = existingPR?.reviews || "";
+  const prFeedback = fresh ? "" : (existingPR?.reviews || "");
   const planningPrompt = buildPlanningPrompt(repo, issueNum, issue, prFeedback, isRetry);
   const buildingPromptFn = (remaining: string[], plan: string) =>
     buildBuildingPrompt(repo, issueNum, issue, remaining, plan);
-  const reviewPrompt = buildReviewPrompt(repo, issueNum, issue);
+  const reviewPrompt = buildReviewPrompt(repo, issueNum, issue, defaultBranch);
+  const summaryPrompt = buildSummaryPrompt(repo, issueNum, issue, defaultBranch);
 
   // Run Claude in sandbox
   log.info("Launching Claude Code in sandbox...");
@@ -255,7 +257,7 @@ async function main() {
   log.info(`Worktree: ${worktreeDir}`);
   console.log();
 
-  const summary = await runClaude(SANDBOX_NAME, worktreeDir, planningPrompt, buildingPromptFn, reviewPrompt);
+  const summary = await runClaude(SANDBOX_NAME, worktreeDir, defaultBranch, planningPrompt, buildingPromptFn, reviewPrompt, summaryPrompt);
 
   // Remove included files so they don't end up in the PR
   for (const filePath of copiedFiles) {
@@ -439,10 +441,46 @@ Rules:
 5. Do NOT work on any other tasks after committing.`;
 }
 
+function buildSummaryPrompt(
+  repo: string,
+  issueNum: string,
+  issue: { title: string; body: string; labels: string; comments: string },
+  defaultBranch: string,
+): string {
+  return `You are summarizing the changes made for GitHub issue #${issueNum} in the repository ${repo}.
+
+## Issue: ${issue.title}
+
+### Description
+${issue.body}
+
+## Instructions
+
+Run \`git diff ${defaultBranch}...HEAD\` to see all changes made on this branch.
+
+Write a concise summary of **all changes** made to resolve the issue and save it to a file called \`SUMMARY.md\` in the root of the repository. Do NOT commit this file.
+
+CRITICAL FORMATTING RULES — the file contents will be inserted directly into a PR body as-is:
+1. Do NOT make any code changes or commits.
+2. The file must start IMMEDIATELY with the first bullet point. No intro text like "Here's what was done" or "Let me summarize". No lead-in sentences whatsoever.
+3. Use a flat list of markdown bullet points (\`- \`). No headings, no sub-sections, no numbered lists.
+4. Each bullet should describe a concrete change: what was added, modified, or fixed and where.
+5. Keep it short — aim for 3-8 bullets. A reviewer should be able to scan it in 10 seconds.
+6. Do NOT list things that were reviewed but not changed. Only describe what actually changed.
+7. Do NOT repeat the issue title or description — the PR already includes those.
+8. End with the last bullet point. No closing remarks, no sign-off, no "Let me know" or "Done." after the bullets.
+
+Example of correct SUMMARY.md contents:
+- Added \`FooService\` class in \`src/services/foo.ts\` with retry logic and error handling
+- Updated \`src/routes/api.ts\` to wire up the new \`/foo\` endpoint
+- Added unit tests for \`FooService\` in \`src/services/__tests__/foo.test.ts\``;
+}
+
 function buildReviewPrompt(
   repo: string,
   issueNum: string,
   issue: { title: string; body: string; labels: string; comments: string },
+  defaultBranch: string,
 ): string {
   return `You are reviewing changes made for GitHub issue #${issueNum} in the repository ${repo}.
 
@@ -452,7 +490,7 @@ ${formatIssueContext(issueNum, issue)}
 
 All implementation tasks are complete. Your job is to **review the entire branch** for quality and completeness.
 
-Run \`git diff main...HEAD\` (or the equivalent for the default branch) to see all changes made.
+Run \`git diff ${defaultBranch}...HEAD\` to see all changes made.
 
 Check for:
 1. **Missed locations**: Search the codebase for similar patterns, logic, or code that handles the same concern as the changes. If the fix or feature was applied in one place but a similar pattern exists elsewhere, apply it there too.

@@ -72,7 +72,8 @@ export function createWorktree(
   repoName: string,
   defaultBranch: string,
   issueNum: string,
-  issueTitle: string
+  issueTitle: string,
+  fresh?: boolean,
 ): { worktreeDir: string; branchName: string; reused: boolean } {
   const safeTitle = issueTitle
     .toLowerCase()
@@ -84,6 +85,12 @@ export function createWorktree(
   const branchName = `${issueNum}-${safeTitle}`;
   const repoDir = `${reposDir}/${owner}/${repoName}`;
   const worktreeDir = `${reposDir}/${owner}/${repoName}-worktrees/${branchName}`;
+
+  if (fs.existsSync(worktreeDir) && fresh) {
+    log.info(`--fresh: removing existing worktree at ${worktreeDir}...`);
+    Bun.spawnSync(["git", "worktree", "remove", "--force", worktreeDir], { cwd: repoDir });
+    Bun.spawnSync(["git", "branch", "-D", branchName], { cwd: repoDir });
+  }
 
   if (fs.existsSync(worktreeDir)) {
     log.warn(`Worktree already exists at ${worktreeDir}, reusing.`);

@@ -22,6 +22,7 @@ const MAX_ITERATIONS = parseInt(
 );
 const MAX_STALLS = 2;
 const PLAN_FILENAME = "IMPLEMENTATION_PLAN.md";
+const SUMMARY_FILENAME = "SUMMARY.md";
 
 export function readPlanFile(worktreeDir: string): string | null {
   const planPath = `${worktreeDir}/${PLAN_FILENAME}`;
@@ -43,14 +44,24 @@ export function isPlanComplete(planContent: string): boolean {
   return unchecked.length === 0 && (checked?.length ?? 0) > 0;
 }
 
-function getCommitCount(sandboxName: string, worktreeDir: string): number {
+function getCommitCount(sandboxName: string, worktreeDir: string, defaultBranch: string): number {
   const result = Bun.spawnSync([
     "docker", "sandbox", "exec",
     "-w", worktreeDir,
     sandboxName,
-    "git", "rev-list", "HEAD", "--not", "--remotes", "--count",
+    "git", "rev-list", "--count", `origin/${defaultBranch}..HEAD`,
   ]);
-  if (result.exitCode !== 0) return 0;
+  if (result.exitCode !== 0) {
+    // Fallback: count commits not on any remote (works even if origin ref is missing)
+    const fallback = Bun.spawnSync([
+      "docker", "sandbox", "exec",
+      "-w", worktreeDir,
+      sandboxName,
+      "git", "rev-list", "HEAD", "--not", "--remotes", "--count",
+    ]);
+    if (fallback.exitCode !== 0) return 0;
+    return parseInt(fallback.stdout.toString().trim(), 10) || 0;
+  }
   return parseInt(result.stdout.toString().trim(), 10) || 0;
 }
 
@@ -71,17 +82,54 @@ function cleanupPlanFile(sandboxName: string, worktreeDir: string): void {
   ]);
 }
 
+function readSummaryFile(worktreeDir: string): string | null {
+  const summaryPath = `${worktreeDir}/${SUMMARY_FILENAME}`;
+  try {
+    const content = fs.readFileSync(summaryPath, "utf-8").trim();
+    // Clean up the file so it doesn't end up in commits
+    fs.unlinkSync(summaryPath);
+    return content || null;
+  } catch {
+    return null;
+  }
+}
+
+async function runSummaryPhase(
+  sandboxName: string,
+  worktreeDir: string,
+  defaultBranch: string,
+  summaryPrompt?: string,
+): Promise<string> {
+  if (!summaryPrompt || getCommitCount(sandboxName, worktreeDir, defaultBranch) <= 0) {
+    return "";
+  }
+
+  log.info("Summarizing changes...");
+  await execClaude(sandboxName, worktreeDir, ["-p", summaryPrompt]);
+
+  const summary = readSummaryFile(worktreeDir);
+  if (summary) {
+    log.ok("Summary generated.");
+    return summary;
+  }
+
+  log.warn("Claude did not write SUMMARY.md — PR will not have a summary section.");
+  return "";
+}
+
 export async function runClaude(
   sandboxName: string,
   worktreeDir: string,
+  defaultBranch: string,
   planningPrompt: string,
   buildingPromptFn: (remainingItems: string[], planContent: string) => string,
   reviewPrompt?: string,
+  summaryPrompt?: string,
 ): Promise<string> {
   let lastResult = "";
 
-  // Phase 1 — Planning
-  log.info("Phase 1: Creating implementation plan...");
+  // Planning
+  log.info("Planning implementation...");
   await execClaude(sandboxName, worktreeDir, ["-p", planningPrompt]);
 
   const planContent = readPlanFile(worktreeDir);
@@ -95,7 +143,7 @@ export async function runClaude(
     if (fallbackResult) lastResult = fallbackResult;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      if (getCommitCount(sandboxName, worktreeDir) > 0) return lastResult;
+      if (getCommitCount(sandboxName, worktreeDir, defaultBranch) > 0) break;
       log.warn(`No commits yet — continuing Claude (attempt ${i + 2}/${MAX_ITERATIONS + 1})...`);
       const contResult = await execClaude(sandboxName, worktreeDir, [
         "--continue", "-p",
@@ -104,15 +152,17 @@ export async function runClaude(
       if (contResult) lastResult = contResult;
     }
 
-    if (getCommitCount(sandboxName, worktreeDir) === 0) {
+    if (getCommitCount(sandboxName, worktreeDir, defaultBranch) === 0) {
       log.warn("Claude did not produce any commits after all attempts.");
     }
-    return lastResult;
+
+    const summary = await runSummaryPhase(sandboxName, worktreeDir, defaultBranch, summaryPrompt);
+    return summary || lastResult;
   }
 
   log.ok(`Implementation plan created with ${unchecked.length} task(s).`);
 
-  // Phase 2 — Building loop
+  // Building loop
   let stallCount = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -128,7 +178,7 @@ export async function runClaude(
       break;
     }
 
-    const commitsBefore = getCommitCount(sandboxName, worktreeDir);
+    const commitsBefore = getCommitCount(sandboxName, worktreeDir, defaultBranch);
     const uncheckedBefore = remaining.length;
 
     log.info(`Iteration ${i + 1}/${MAX_ITERATIONS}: ${remaining[0]!.replace("- [ ] ", "")}`);
@@ -139,7 +189,7 @@ export async function runClaude(
 
     const planAfter = readPlanFile(worktreeDir);
     const uncheckedAfter = planAfter ? getUncheckedItems(planAfter).length : 0;
-    const commitsAfter = getCommitCount(sandboxName, worktreeDir);
+    const commitsAfter = getCommitCount(sandboxName, worktreeDir, defaultBranch);
 
     if (uncheckedAfter >= uncheckedBefore && commitsAfter <= commitsBefore) {
       stallCount++;
@@ -153,14 +203,14 @@ export async function runClaude(
     }
   }
 
-  // Phase 3 — Review
+  // Review
   if (reviewPrompt) {
-    log.info("Phase 3: Reviewing changes for quality and completeness...");
+    log.info("Reviewing changes for quality and completeness...");
     const reviewResult = await execClaude(sandboxName, worktreeDir, ["-p", reviewPrompt]);
     if (reviewResult) lastResult = reviewResult;
   }
 
-  // Phase 4 — Cleanup
+  // Cleanup
   cleanupPlanFile(sandboxName, worktreeDir);
 
   const finalPlan = readPlanFile(worktreeDir);
@@ -173,7 +223,9 @@ export async function runClaude(
     log.ok("Plan file cleaned up.");
   }
 
-  return lastResult;
+  // Summary
+  const summary = await runSummaryPhase(sandboxName, worktreeDir, defaultBranch, summaryPrompt);
+  return summary || lastResult;
 }
 
 async function execClaude(sandboxName: string, worktreeDir: string, claudeArgs: string[]): Promise<string> {
