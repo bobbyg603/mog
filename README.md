@@ -74,6 +74,33 @@ mog 123 --include .env --include serviceAccountKey.json
 mog list
 mog list --verbose
 mog owner/repo list --verbose
+
+# Check version
+mog --version
+mog -v
+```
+
+### Git identity
+
+`mog` automatically configures the git identity inside the sandbox so commits are attributed correctly. Identity is resolved via a 3-tier priority chain:
+
+1. **Per-repo mog config** (`~/.mog/repos/<owner>/<repo>/config.json`)
+2. **Host git config** (auto-detected at runtime from your local `git config`)
+3. **Global mog config** (`~/.mog/config.json`)
+
+Most users need zero configuration — `mog` reads your host git identity automatically. Use `mog config` to override when needed:
+
+```bash
+# View current per-repo config (auto-detected from git remote)
+mog config
+
+# Set per-repo git identity
+mog config user.name "Your Name"
+mog config user.email "you@example.com"
+
+# Set global fallback identity
+mog config --global user.name "Your Name"
+mog config --global user.email "you@example.com"
 ```
 
 ### Re-mogging
@@ -122,11 +149,31 @@ mog 123 --fresh
 
 ## Configuration
 
+### Environment variables
+
 | Environment Variable | Default | Description |
 |---|---|---|
 | `MOG_REPOS_DIR` | `~/mog-repos` | Where repos are cloned and worktrees created (also the sandbox workspace) |
 | `MOG_MAX_ITERATIONS` | `30` | Max build loop iterations per issue |
 | `MOG_MAX_CONTINUATIONS` | — | Legacy alias for `MOG_MAX_ITERATIONS` |
+
+### Config files
+
+`mog config` manages git identity settings stored in `~/.mog/`:
+
+```
+~/.mog/
+  config.json                          ← global config
+  repos/
+    owner/repo/config.json             ← per-repo config
+```
+
+| Config Key | Description |
+|---|---|
+| `user.name` | Git author name for commits inside the sandbox |
+| `user.email` | Git author email for commits inside the sandbox |
+
+See [Git identity](#git-identity) for details on how these are resolved.
 
 ## Worktree management
 
