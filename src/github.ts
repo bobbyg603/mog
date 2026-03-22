@@ -1,3 +1,4 @@
+import { getGitIdentity } from "./config";
 import { log } from "./log";
 
 export interface Issue {
@@ -150,6 +151,14 @@ export function getConventionalPrefix(issue: Issue): string {
   return labels.includes("enhancement") || labels.includes("feature") ? "feat" : "fix";
 }
 
+function gitWithIdentity(repo: string, ...args: string[]): string[] {
+  const identity = getGitIdentity(repo);
+  if (identity) {
+    return ["git", `-c`, `user.name=${identity.name}`, `-c`, `user.email=${identity.email}`, ...args];
+  }
+  return ["git", ...args];
+}
+
 export function pushAndCreatePR(
   repo: string,
   worktreeDir: string,
@@ -183,7 +192,7 @@ export function pushAndCreatePR(
     if (addResult.exitCode !== 0) {
       log.die("Failed to stage changes.");
     }
-    const commitResult = Bun.spawnSync(["git", "commit", "-m", `${prefix}: address issue #${issueNum} - ${cleanIssueTitle(issue.title)}`], { cwd: worktreeDir });
+    const commitResult = Bun.spawnSync(gitWithIdentity(repo, "commit", "-m", `${prefix}: address issue #${issueNum} - ${cleanIssueTitle(issue.title)}`), { cwd: worktreeDir });
     if (commitResult.exitCode !== 0) {
       log.warn("Commit failed — changes may already be committed.");
     }
@@ -198,7 +207,7 @@ export function pushAndCreatePR(
     const squash = Bun.spawnSync(["git", "reset", "--soft", mergeBase], { cwd: worktreeDir });
     if (squash.exitCode === 0) {
       const msg = `${prefix}: ${cleanIssueTitle(issue.title).toLowerCase()} (#${issueNum})`;
-      Bun.spawnSync(["git", "commit", "-m", msg], { cwd: worktreeDir });
+      Bun.spawnSync(gitWithIdentity(repo, "commit", "-m", msg), { cwd: worktreeDir });
       log.ok("Commits squashed.");
     } else {
       log.warn("Failed to squash — pushing individual commits instead.");

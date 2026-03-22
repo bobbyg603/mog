@@ -1,5 +1,6 @@
 import fs from "fs";
 import { log } from "./log";
+import { getGitIdentity } from "./config";
 
 interface StreamEvent {
   type: string;
@@ -23,6 +24,25 @@ const MAX_ITERATIONS = parseInt(
 const MAX_STALLS = 2;
 const PLAN_FILENAME = "IMPLEMENTATION_PLAN.md";
 const SUMMARY_FILENAME = "SUMMARY.md";
+
+export function applySandboxGitConfig(sandboxName: string, repo?: string): void {
+  const identity = getGitIdentity(repo);
+  if (!identity) return;
+
+  Bun.spawnSync([
+    "docker", "sandbox", "exec",
+    sandboxName,
+    "git", "config", "--global", "user.name", identity.name,
+  ]);
+
+  Bun.spawnSync([
+    "docker", "sandbox", "exec",
+    sandboxName,
+    "git", "config", "--global", "user.email", identity.email,
+  ]);
+
+  log.ok(`Sandbox git identity: ${identity.name} <${identity.email}>`);
+}
 
 export function readPlanFile(worktreeDir: string): string | null {
   const planPath = `${worktreeDir}/${PLAN_FILENAME}`;

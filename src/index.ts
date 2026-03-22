@@ -4,7 +4,9 @@ import fs from "fs";
 import path from "path";
 import { fetchIssue, listIssues, fetchPRFeedback, closePR, cleanIssueTitle, pushAndCreatePR } from "./github";
 import { detectRepo, ensureRepo, createWorktree } from "./worktree";
-import { runClaude } from "./sandbox";
+import { runClaude, applySandboxGitConfig } from "./sandbox";
+import { loadConfig, saveConfig, loadRepoConfig, saveRepoConfig } from "./config";
+import type { MogConfig } from "./config";
 import type { PRFeedback } from "./github";
 import { log } from "./log";
 
@@ -112,6 +114,65 @@ async function main() {
 
   if (args[0] === "init") {
     await init();
+    return;
+  }
+
+  // mog config [--global] [key] [value]
+  if (args[0] === "config") {
+    const configArgs = args.slice(1);
+    const isGlobal = configArgs.includes("--global");
+    const filtered = configArgs.filter(a => a !== "--global");
+    const key = filtered[0];
+    const value = filtered[1];
+    const validKeys: (keyof MogConfig)[] = ["user.name", "user.email"];
+
+    // Determine which config to use: --global or per-repo (auto-detected)
+    let repo: string | null = null;
+    if (!isGlobal) {
+      repo = detectRepo();
+    }
+
+    const load = () => repo ? loadRepoConfig(repo) : loadConfig();
+    const save = (c: MogConfig) => repo ? saveRepoConfig(repo, c) : saveConfig(c);
+    const scope = repo ? `repo (${repo})` : "global";
+
+    if (!key) {
+      // Show all config values
+      const config = load();
+      if (Object.keys(config).length === 0) {
+        log.info(`No ${scope} config values set.`);
+      } else {
+        log.info(`${scope} config:`);
+        for (const [k, v] of Object.entries(config)) {
+          console.log(`${k}=${v}`);
+        }
+      }
+      return;
+    }
+
+    if (!validKeys.includes(key as keyof MogConfig)) {
+      log.die(`Unknown config key: '${key}'. Valid keys: ${validKeys.join(", ")}`);
+    }
+
+    const configKey = key as keyof MogConfig;
+
+    if (value === undefined) {
+      // Read a single value
+      const config = load();
+      const val = config[configKey];
+      if (val !== undefined) {
+        console.log(val);
+      } else {
+        log.die(`Config key '${key}' is not set (${scope}).`);
+      }
+      return;
+    }
+
+    // Set a value
+    const config = load();
+    config[configKey] = value;
+    save(config);
+    log.ok(`${key}=${value} (${scope})`);
     return;
   }
 
@@ -246,6 +307,9 @@ async function main() {
   const reviewPrompt = buildReviewPrompt(repo, issueNum, issue, defaultBranch);
   const summaryPrompt = buildSummaryPrompt(repo, issueNum, issue, defaultBranch);
 
+  // Apply git identity inside sandbox before running Claude
+  applySandboxGitConfig(SANDBOX_NAME, repo);
+
   // Run Claude in sandbox
   log.info("Launching Claude Code in sandbox...");
   log.info(`Branch: ${branchName}`);
@@ -267,6 +331,35 @@ async function main() {
 
   // Push and create/update PR
   pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary, existingPR);
+}
+
+function printUsage(): void {
+  console.log("Usage:");
+  console.log("  mog init                      — one-time setup (create sandbox & login)");
+  console.log("  mog config [key] [value]      — get/set per-repo config (auto-detected)");
+  console.log("  mog config --global [key] [value] — get/set global config");
+  console.log("  mog <issue_num>               — auto-detect repo from git remote");
+  console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
+  console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
+  console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
+  console.log();
+  console.log("Options:");
+  console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+  console.log("  --fresh                       — ignore existing PR, start a brand new one");
+  console.log();
+  console.log("Config keys: user.name, user.email");
+  console.log("  Git identity is auto-detected from your repo's git config.");
+  console.log("  Use 'mog config' to override per-repo, or --global for all repos.");
+  console.log();
+  console.log("Example:");
+  console.log("  mog init");
+  console.log("  mog config user.name \"Your Name\"");
+  console.log("  mog config --global user.email \"you@example.com\"");
+  console.log("  mog 123");
+  console.log("  mog 123 --include .env");
+  console.log("  mog workingdevshero/automate-it 123");
+  console.log("  mog list");
+  console.log("  mog list --verbose");
 }
 
 function getReposDir(): string {
