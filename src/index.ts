@@ -59,8 +59,37 @@ async function init() {
   log.ok("mog is ready. Run: mog <issue_number> (from a git repo) or mog <owner/repo> <issue_number>");
 }
 
+function printUsage(): void {
+  console.log("Usage:");
+  console.log("  mog init                      — one-time setup (create sandbox & login)");
+  console.log("  mog <issue_num>               — auto-detect repo from git remote");
+  console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
+  console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
+  console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
+  console.log();
+  console.log("Options:");
+  console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+  console.log("  --fresh                       — ignore existing PR, start a brand new one");
+  console.log("  --version, -v                 — print the current version");
+  console.log();
+  console.log("Example:");
+  console.log("  mog init");
+  console.log("  mog 123");
+  console.log("  mog 123 --include .env");
+  console.log("  mog workingdevshero/automate-it 123");
+  console.log("  mog list");
+  console.log("  mog list --verbose");
+}
+
 async function main() {
   const args = process.argv.slice(2);
+
+  // Handle --version / -v before anything else (no dependencies required)
+  if (args.includes("--version") || args.includes("-v")) {
+    const pkg = await Bun.file(path.join(import.meta.dir, "..", "package.json")).json();
+    console.log(pkg.version);
+    return;
+  }
 
   // Validate dependencies
   for (const cmd of ["gh", "git", "docker"]) {
@@ -106,24 +135,7 @@ async function main() {
   }
 
   if (args.length < 1) {
-    console.log("Usage:");
-    console.log("  mog init                      — one-time setup (create sandbox & login)");
-    console.log("  mog <issue_num>               — auto-detect repo from git remote");
-    console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
-    console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
-    console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
-    console.log();
-    console.log("Options:");
-    console.log("  --include <file>              — copy a file into the worktree (repeatable)");
-    console.log("  --fresh                       — ignore existing PR, start a brand new one");
-    console.log();
-    console.log("Example:");
-    console.log("  mog init");
-    console.log("  mog 123");
-    console.log("  mog 123 --include .env");
-    console.log("  mog workingdevshero/automate-it 123");
-    console.log("  mog list");
-    console.log("  mog list --verbose");
+    printUsage();
     return;
   }
 
@@ -165,24 +177,7 @@ async function main() {
       log.die(`Invalid issue number: '${issueNum}'. Must be a positive integer.`);
     }
   } else {
-    console.log("Usage:");
-    console.log("  mog init                      — one-time setup (create sandbox & login)");
-    console.log("  mog <issue_num>               — auto-detect repo from git remote");
-    console.log("  mog <owner/repo> <issue_num>  — fetch issue, run Claude, open PR");
-    console.log("  mog list [--verbose]           — list open issues (auto-detect repo)");
-    console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
-    console.log();
-    console.log("Options:");
-    console.log("  --include <file>              — copy a file into the worktree (repeatable)");
-    console.log("  --fresh                       — ignore existing PR, start a brand new one");
-    console.log();
-    console.log("Example:");
-    console.log("  mog init");
-    console.log("  mog 123");
-    console.log("  mog 123 --include .env");
-    console.log("  mog workingdevshero/automate-it 123");
-    console.log("  mog list");
-    console.log("  mog list --verbose");
+    printUsage();
     return;
   }
 
