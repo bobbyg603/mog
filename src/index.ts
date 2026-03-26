@@ -9,6 +9,7 @@ import { loadConfig, saveConfig, loadRepoConfig, saveRepoConfig } from "./config
 import type { MogConfig } from "./config";
 import type { PRFeedback } from "./github";
 import { log } from "./log";
+import { parseMogIncludeFile, copyIncludeFiles, cleanupIncludeFiles } from "./include";
 
 const SANDBOX_NAME = "mog";
 const TEMPLATE_TAG = "mog-template:latest";
@@ -77,7 +78,7 @@ function printUsage(): void {
   console.log("Example:");
   console.log("  mog init");
   console.log("  mog 123");
-  console.log("  mog 123 --include .env");
+  console.log("  mog 123 --include .env --include config/local/");
   console.log("  mog workingdevshero/automate-it 123");
   console.log("  mog list");
   console.log("  mog list --verbose");
@@ -201,21 +202,30 @@ async function main() {
   }
 
   // Parse --include and --fresh flags
-  const includeFiles: string[] = [];
+  const cliIncludePaths: string[] = [];
   const filteredArgs: string[] = [];
   let fresh = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--include" && i + 1 < args.length) {
-      const filePath = path.resolve(args[i + 1]!);
-      if (!fs.existsSync(filePath)) {
-        log.die(`Include file not found: ${args[i + 1]}`);
-      }
-      includeFiles.push(filePath);
+      cliIncludePaths.push(path.resolve(args[i + 1]!));
       i++; // skip the path argument
     } else if (args[i] === "--fresh") {
       fresh = true;
     } else {
       filteredArgs.push(args[i]!);
+    }
+  }
+
+  // Resolve repo root once for .moginclude parsing and later for copying
+  const repoRootResult = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"]);
+  const repoRoot = repoRootResult.exitCode === 0 ? repoRootResult.stdout.toString().trim() : "";
+
+  // Merge .moginclude paths with --include CLI args, deduplicate, and validate
+  const mogIncludePaths = repoRoot ? parseMogIncludeFile(repoRoot) : [];
+  const includeFiles = [...new Set([...mogIncludePaths, ...cliIncludePaths])];
+  for (const filePath of includeFiles) {
+    if (!fs.existsSync(filePath)) {
+      log.die(`Include path not found: ${filePath}`);
     }
   }
 
@@ -289,14 +299,10 @@ async function main() {
     log.ok(`Found existing PR #${pr.prNumber} — will include review feedback and update it.`);
   }
 
-  // Copy included files into worktree
-  const copiedFiles: string[] = [];
-  for (const filePath of includeFiles) {
-    const basename = path.basename(filePath);
-    const dest = path.join(worktreeDir, basename);
-    fs.copyFileSync(filePath, dest);
-    copiedFiles.push(dest);
-    log.ok(`Included: ${basename}`);
+  // Copy included files/directories into worktree
+  const copiedFiles = copyIncludeFiles(includeFiles, repoRoot, worktreeDir);
+  for (const filePath of copiedFiles) {
+    log.ok(`Included: ${path.relative(worktreeDir, filePath)}`);
   }
 
   // Build prompts
@@ -318,16 +324,8 @@ async function main() {
 
   const summary = await runClaude(SANDBOX_NAME, worktreeDir, defaultBranch, planningPrompt, buildingPromptFn, reviewPrompt, summaryPrompt);
 
-  // Remove included files so they don't end up in the PR
-  for (const filePath of copiedFiles) {
-    try {
-      fs.unlinkSync(filePath);
-      // Unstage if Claude happened to git add it
-      Bun.spawnSync(["git", "rm", "--cached", "--ignore-unmatch", path.basename(filePath)], { cwd: worktreeDir });
-    } catch {
-      // File may already be gone
-    }
-  }
+  // Remove included files/directories so they don't end up in the PR
+  cleanupIncludeFiles(copiedFiles, worktreeDir);
 
   // Push and create/update PR
   pushAndCreatePR(repo, worktreeDir, branchName, defaultBranch, issueNum, issue, summary, existingPR);
@@ -344,8 +342,13 @@ function printUsage(): void {
   console.log("  mog <owner/repo> list [--verbose] — list open issues for a repo");
   console.log();
   console.log("Options:");
-  console.log("  --include <file>              — copy a file into the worktree (repeatable)");
+  console.log("  --include <path>              — copy a file or directory into the worktree (repeatable)");
   console.log("  --fresh                       — ignore existing PR, start a brand new one");
+  console.log("  --version, -v                 — print the current version");
+  console.log();
+  console.log("Auto-include:");
+  console.log("  Add a .moginclude file to the repo root to always copy specific paths.");
+  console.log("  One path per line, comments (#) and blank lines are ignored.");
   console.log();
   console.log("Config keys: user.name, user.email");
   console.log("  Git identity is auto-detected from your repo's git config.");
@@ -356,7 +359,7 @@ function printUsage(): void {
   console.log("  mog config user.name \"Your Name\"");
   console.log("  mog config --global user.email \"you@example.com\"");
   console.log("  mog 123");
-  console.log("  mog 123 --include .env");
+  console.log("  mog 123 --include .env --include config/local/");
   console.log("  mog workingdevshero/automate-it 123");
   console.log("  mog list");
   console.log("  mog list --verbose");
